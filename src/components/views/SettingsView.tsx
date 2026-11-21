@@ -1,19 +1,42 @@
-import React, { useState } from 'react';
-import { Settings, Shield, Bell, Database, Globe, Sliders, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Settings, Shield, Globe, Sliders, CheckCircle2 } from 'lucide-react';
 
 interface SettingsViewProps {
   lang: 'ar' | 'en';
   onToggleLang: () => void;
 }
 
+const STORAGE_KEY = 'egx_ai_preferences_v1';
+
 export const SettingsView: React.FC<SettingsViewProps> = ({ lang, onToggleLang }) => {
   const [riskPerTrade, setRiskPerTrade] = useState(2);
   const [defaultHoldingDays, setDefaultHoldingDays] = useState(21);
   const [minRewardRisk, setMinRewardRisk] = useState(2.0);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [saved, setSaved] = useState(false);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.riskPerTrade === 'number') setRiskPerTrade(parsed.riskPerTrade);
+        if (typeof parsed.defaultHoldingDays === 'number') setDefaultHoldingDays(parsed.defaultHoldingDays);
+        if (typeof parsed.minRewardRisk === 'number') setMinRewardRisk(parsed.minRewardRisk);
+      }
+    } catch {
+      // Ignore storage access restrictions inside sandboxed iframes
+    }
+  }, []);
+
   const handleSave = () => {
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ riskPerTrade, defaultHoldingDays, minRewardRisk })
+      );
+    } catch {
+      // Ignore storage write errors inside restricted contexts
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
@@ -29,7 +52,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ lang, onToggleLang }
           </span>
         </div>
         <h1 className="text-2xl font-black text-white">
-          {lang === 'ar' ? 'تخصيص معايير المخاطرة والتداول ومحرك الذكاء الاصطناعي' : 'Terminal Preferences & Risk Controls'}
+          {lang === 'ar' ? 'تخصيص معايير المخاطرة وضوابط النزاهة الحسابية' : 'Terminal Preferences & Risk Controls'}
         </h1>
       </div>
 
@@ -50,22 +73,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ lang, onToggleLang }
               <input
                 type="number"
                 step="0.5"
+                min={0.5}
+                max={5}
                 value={riskPerTrade}
-                onChange={(e) => setRiskPerTrade(Number(e.target.value))}
+                onChange={(e) => setRiskPerTrade(Number(e.target.value) || 2)}
                 className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white outline-none focus:border-emerald-500"
               />
-              <span className="text-[10px] text-slate-500 font-sans block mt-1">الموصى به دولياً: 1.5% - 2%</span>
+              <span className="text-[10px] text-slate-500 font-sans block mt-1">الموصى به: 1.5% - 2%</span>
             </div>
 
             <div>
               <label className="text-slate-400 block mb-1 font-sans font-medium">
-                {lang === 'ar' ? 'الحد الأدنى لنسبة العائد إلى المخاطرة (R:R):' : 'Min Acceptable R:R Ratio:'}
+                {lang === 'ar' ? 'الحد الأدنى لنسبة العائد للمخاطرة (R:R):' : 'Min Acceptable R:R Ratio:'}
               </label>
               <input
                 type="number"
                 step="0.1"
+                min={1}
                 value={minRewardRisk}
-                onChange={(e) => setMinRewardRisk(Number(e.target.value))}
+                onChange={(e) => setMinRewardRisk(Number(e.target.value) || 2)}
                 className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white outline-none focus:border-emerald-500"
               />
               <span className="text-[10px] text-slate-500 font-sans block mt-1">يمنع إصدار توصية شراء إذا قل العائد عن 2:1</span>
@@ -77,8 +103,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ lang, onToggleLang }
               </label>
               <input
                 type="number"
+                min={5}
                 value={defaultHoldingDays}
-                onChange={(e) => setDefaultHoldingDays(Number(e.target.value))}
+                onChange={(e) => setDefaultHoldingDays(Number(e.target.value) || 21)}
                 className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white outline-none focus:border-emerald-500"
               />
               <span className="text-[10px] text-slate-500 font-sans block mt-1">تداول متأرجح (أسبوع إلى شهر)</span>
@@ -107,25 +134,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ lang, onToggleLang }
           </div>
         </div>
 
-        {/* AI Model Architecture & Engine status */}
+        {/* AI Model Architecture & Data Integrity */}
         <div className="space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-2">
             <Sliders className="w-4 h-4 text-amber-400" />
-            {lang === 'ar' ? 'محرك الذكاء الاصطناعي والحوكمة المالية:' : 'AI Model & Financial Governance:'}
+            {lang === 'ar' ? 'حوكمة الذكاء الاصطناعي ونزاهة البيانات:' : 'AI Governance & Data Integrity:'}
           </h3>
 
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2 text-xs text-slate-300">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">النموذج النشط للتحليل وتوليد التقارير:</span>
-              <span className="font-mono font-bold text-emerald-400">Google Gemini 3.8 Flash</span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-slate-400">دور نموذج الذكاء الاصطناعي (Gemini AI):</span>
+              <span className="font-bold text-emerald-400">تفسير النتائج الحسابية المحسوبة فقط (دون اختراع أرقام)</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">فصل الحسابات الرقمية عن التفكير اللغوي (Deterministic Separation):</span>
-              <span className="font-bold text-emerald-400">مُفعل بنسبة 100%</span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-slate-400">فصل الحسابات الرقمية عن التفكير اللغوي:</span>
+              <span className="font-bold text-emerald-400">مُفعل بصورة حتمية</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">بوابات حظر التوصيات المضللة (Mandatory Risk Gates):</span>
-              <span className="font-bold text-emerald-400">نشطة وصارمة</span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-slate-400">بوابة الامتناع عند نقص البيانات (INSUFFICIENT_DATA):</span>
+              <span className="font-bold text-emerald-400">نشطة — لا يصدر تحليل دون بيانات حقيقية كافية</span>
             </div>
           </div>
         </div>
@@ -133,8 +160,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ lang, onToggleLang }
         {/* Save button */}
         <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
           {saved && (
-            <span className="text-xs text-emerald-400 flex items-center gap-1 font-bold animate-fade-in">
-              <CheckCircle2 className="w-4 h-4" /> تم حفظ الإعدادات بنجاح
+            <span className="text-xs text-emerald-400 flex items-center gap-1 font-bold">
+              <CheckCircle2 className="w-4 h-4" /> تم حفظ التفضيلات
             </span>
           )}
           <button

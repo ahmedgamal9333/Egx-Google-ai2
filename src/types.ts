@@ -15,16 +15,33 @@ export interface EGXStockSummary {
   volume: number;
   valueTraded: number;
   marketCapEgp: number;
-  peRatio: number;
-  pbRatio: number;
-  dividendYield: number;
-  fairValue: number;
-  fairValueUpsidePct: number;
-  rsi14: number;
-  dailyTrend: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
-  quickScore: number;
-  recommendationBadge: 'STRONG_BUY' | 'BUY' | 'WAIT' | 'HOLD' | 'REDUCE';
+  peRatio: number | null;
+  pbRatio: number | null;
+  dividendYield: number | null;
+  fairValue: number | null;
+  fairValueUpsidePct: number | null;
+  rsi14: number | null;
+  dailyTrend: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNAVAILABLE';
+  quickScore: number | null;
+  recommendationBadge: 'STRONG_BUY' | 'BUY' | 'WAIT' | 'HOLD' | 'REDUCE' | 'INSUFFICIENT_DATA';
   recommendationBadgeAr: string;
+  priceDate?: string | null;
+  isLiveQuote?: boolean;
+  isStaleQuote?: boolean;
+  mathReasonAr?: string;
+  screenerCategory?:
+    | 'EARLY_LAUNCH_CANDIDATE'
+    | 'NEAR_BREAKOUT'
+    | 'CONFIRMED_BREAKOUT'
+    | 'CONTINUING_UPTREND'
+    | 'WATCHLIST'
+    | 'WEAK_OR_HIGH_RISK'
+    | 'INSUFFICIENT_DATA';
+  screenerCategoryAr?: string;
+  confidencePct?: number;
+  relativeVolume?: number | null;
+  accumulationDetected?: boolean;
+  falseBreakoutWarning?: boolean;
 }
 
 export interface Candle {
@@ -74,7 +91,20 @@ export interface LastCandlesAnalysis {
   dataSourceLabel: string;
 }
 
+export interface TechnicalScoreComponent {
+  labelAr: string;
+  conditionAr: string;
+  points: number;
+}
+
 export interface TechnicalIndicatorsResult {
+  isRealData: boolean;
+  candlesCount: number;
+  firstCandleDate: string;
+  lastCandleDate: string;
+  isStale: boolean;
+  staleDays: number | null;
+  staleReasonAr: string | null;
   currentPrice: number;
   previousClose: number;
   changePct: number;
@@ -129,8 +159,18 @@ export interface TechnicalIndicatorsResult {
   fibonacciLevels: FibonacciLevel[];
   patternsDetected: string[];
   breakoutStatus: 'BREAKOUT_UP' | 'BREAKDOWN' | 'CONSOLIDATING' | 'NEAR_RESISTANCE' | 'NEAR_SUPPORT';
-  technicalScore: number;
+  technicalScore?: number;
+  technicalScoreBreakdown?: TechnicalScoreComponent[];
+  technicalScoreFormulaAr?: string;
   lastCandlesAnalysis?: LastCandlesAnalysis;
+  higherHighsHigherLows?: boolean;
+  volatilityContraction?: {
+    detected: boolean;
+    bandwidthPct: number | null;
+    noteAr: string;
+  };
+  falseBreakoutDetected?: boolean;
+  falseBreakoutNoteAr?: string | null;
   pivotPoints?: {
     classic: { s3: number; s2: number; s1: number; p: number; r1: number; r2: number; r3: number };
     high1M?: number;
@@ -158,48 +198,60 @@ export interface FinancialYearData {
 }
 
 export interface FinancialRatios {
-  revenueGrowthYoY: number;
-  grossProfitMargin: number;
-  operatingMargin: number;
-  netProfitMargin: number;
-  roe: number;
-  roa: number;
-  roic: number;
-  peRatio: number;
-  forwardPe: number;
-  pbRatio: number;
-  evEbitda: number;
-  dividendYield: number;
-  fcfYield: number;
-  debtToEquity: number;
-  currentRatio: number;
-  quickRatio: number;
-  interestCoverageRatio: number;
-  cashFlowCoverage: number;
-  revenueCagr3Y: number;
-  earningsCagr3Y: number;
-  epsGrowthYoY: number;
-  bookValuePerShare: number;
-  sectorSpecific: {
-    label1: string;
-    value1: string;
-    label2: string;
-    value2: string;
-    label3: string;
-    value3: string;
-  };
-  fundamentalQualityScore: number;
+  grossProfitMargin: number | null;
+  operatingMargin: number | null;
+  netProfitMargin: number | null;
+  roe: number | null;
+  roa: number | null;
+  peRatio: number | null;
+  pbRatio: number | null;
+  dividendYield: number | null;
+  dividendPayoutRatio?: number | null;
+  debtToEquity: number | null;
+  currentRatio?: number | null;
+  freeCashFlow?: number | null;
+  operatingCashFlow?: number | null;
+  revenueGrowthPct?: number | null;
+  epsGrowthPct?: number | null;
+  eps: number | null;
+  bookValuePerShare: number | null;
+  marketCapEgp: number | null;
+  high52W: number | null;
+  low52W: number | null;
+  fundamentalQualityScore: number | null;
   earningsQualityStatusAr: string;
   financialRiskStatusAr: string;
+  dividendSustainabilityAr?: string;
 }
 
 export interface FundamentalDataResult {
   ticker: string;
+  available: boolean;
+  insufficientReasonAr?: string;
+  sectorProfile?: string;
+  sectorProfileAr?: string;
+  fundamentalConfidence?: 'HIGH' | 'MEDIUM' | 'LOW' | 'UNAVAILABLE';
+  availableMetricsCount: number;
+  dataCompletenessPct: number;
   reportingPeriod: string;
-  publicationDate: string;
-  auditorOpinion: 'UNQUALIFIED' | 'QUALIFIED' | 'EMPHASIS_OF_MATTER';
-  auditorName: string;
+  fiscalPeriodEndDate?: string | null;
+  earningsReleaseDate?: string | null;
+  nextEarningsDate?: string | null;
+  dataSourceLabel: string;
+  publicationDate: string | null;
+  publishedMetrics?: Record<string, number | string | null>;
+  derivedMetrics?: {
+    impliedEpsFromPe: number | null;
+    impliedBvpsFromPb: number | null;
+    marketCapFromListedShares: number | null;
+    fcfToNetIncomeRatio: number | null;
+    noteAr: string;
+  };
+  unavailableMetrics?: string[];
   historicalYears: FinancialYearData[];
+  historicalStatementsNoteAr: string;
+  qualityScoreFormulaAr: string;
+  qualityScoreComponents: { labelAr: string; points: number; detailAr: string }[];
   ratios: FinancialRatios;
 }
 
@@ -208,31 +260,38 @@ export interface ValuationMethodItem {
   methodNameEn: string;
   weightPct: number;
   calculatedValue: number;
+  formulaAr: string;
   descriptionAr: string;
 }
 
 export interface FairValueResult {
   ticker: string;
+  available: boolean;
+  insufficientReasonAr?: string;
+  valuationConfidence?: 'HIGH' | 'MEDIUM' | 'LOW' | 'UNAVAILABLE';
   currentPrice: number;
-  estimatedFairValue: number;
-  conservativeValuation: number;
-  optimisticValuation: number;
-  upsideDownsidePct: number;
-  marginOfSafetyPct: number;
-  valuationStatus: 'UNDERVALUED' | 'FAIRLY_VALUED' | 'OVERVALUED';
+  estimatedFairValue: number | null;
+  conservativeValuation: number | null;
+  optimisticValuation: number | null;
+  upsideDownsidePct: number | null;
+  marginOfSafetyPct: number | null;
+  valuationStatus: 'UNDERVALUED' | 'FAIRLY_VALUED' | 'OVERVALUED' | 'UNAVAILABLE';
   valuationStatusAr: string;
   valuationDate: string;
   dataCompletenessPct: number;
-  confidenceScore: number;
   methods: ValuationMethodItem[];
-  dcfAssumptions: {
-    waccDiscountRate: number;
-    terminalGrowthRate: number;
-    taxRate: number;
-    fiveYearRevenueCagr: number;
-    operatingMarginAvg: number;
-    capexPctRevenue: number;
+  modelInputs: {
+    eps: number | null;
+    bookValuePerShare: number | null;
+    roePct: number | null;
+    sectorMedianPe: number | null;
+    sectorMedianPb?: number | null;
+    sectorPeersCount: number;
+    costOfEquityPct: number;
+    cbeReferenceRatePct: number;
+    cbeReferenceDate: string;
   };
+  formulaExplanationAr: string;
   summaryAr: string;
 }
 
@@ -241,15 +300,21 @@ export interface NewsItem {
   ticker: string;
   titleAr: string;
   titleEn: string;
-  source: 'EGX' | 'Mubasher' | 'Enterprise' | 'CBE' | 'FRA';
+  source: string;
   sourceUrl: string;
+  originalSourceDomain?: string | null;
   publishedAt: string;
   isConfirmed: boolean;
+  newsType?: string;
+  newsTypeAr?: string;
+  sourceCredibilityAr?: string;
   category: string;
   categoryAr: string;
   impact: 'VERY_POSITIVE' | 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE' | 'VERY_NEGATIVE';
   impactAr: string;
   impactHorizon: string;
+  impactMechanismAr?: string;
+  classificationConfidencePct?: number;
   summaryAr: string;
   significanceScore: number;
 }
@@ -260,7 +325,7 @@ export interface UpcomingEvent {
   eventNameAr: string;
   eventDate: string;
   category: string;
-  status: 'CONFIRMED' | 'ESTIMATED';
+  status: string;
   detailsAr: string;
 }
 
@@ -268,59 +333,90 @@ export interface SmartAlert {
   id: string;
   ticker: string;
   companyNameAr: string;
-  type: 'ENTRY_ZONE' | 'BREAKOUT' | 'TARGET_HIT' | 'STOP_APPROACH' | 'VOLUME_SPIKE' | 'DISCLOSURE' | 'RECOMMENDATION_CHANGE';
+  type: string;
   typeAr: string;
   severity: 'INFO' | 'SUCCESS' | 'WARNING' | 'DANGER';
-  triggerPrice: number;
+  triggerPrice: number | null;
   messageAr: string;
   timestamp: string;
   isRead: boolean;
+}
+
+export interface ScorePillarBreakdown {
+  key: string;
+  labelAr: string;
+  weightPct: number;
+  score: number;
+  weightedContribution: number;
+  formulaAr: string;
+}
+
+export interface ScenarioPlan {
+  directionAr: string;
+  supportingConditionsAr: string[];
+  keyLevelsAr: string;
+  invalidationTriggerAr: string;
 }
 
 export interface InvestmentPlanResult {
   ticker: string;
   companyNameAr: string;
   currentPrice: number;
-  recommendation: 'STRONG_BUY' | 'BUY' | 'WAIT' | 'HOLD' | 'REDUCE' | 'SELL' | 'AVOID';
+  available: boolean;
+  insufficientReasonAr?: string;
+  isStaleData: boolean;
+  dataDate: string | null;
+  recommendation: 'STRONG_BUY' | 'BUY' | 'WAIT' | 'HOLD' | 'REDUCE' | 'SELL' | 'AVOID' | 'INSUFFICIENT_DATA';
   recommendationAr: string;
   recommendationBadgeColor: string;
   holdingPeriodAr: string;
-  overallScore: number;
-  confidenceScore: number;
+  overallScore: number | null;
+  confidenceScore: number | null;
+  mathematicalRationaleAr: string;
+  scoreFormulaAr: string;
+  pillars: ScorePillarBreakdown[];
   scoreBreakdown: {
     technicalWeight: number;
-    technicalScore: number;
+    technicalScore: number | null;
     fundamentalWeight: number;
-    fundamentalScore: number;
+    fundamentalScore: number | null;
     liquidityWeight: number;
-    liquidityScore: number;
-    newsWeight: number;
-    newsScore: number;
+    liquidityScore: number | null;
+    valuationWeight: number;
+    valuationScore: number | null;
     marketWeight: number;
-    marketScore: number;
+    marketScore: number | null;
   };
-  preferredEntryZone: { min: number; max: number; labelAr: string };
-  alternativeEntryZone: { min: number; max: number; labelAr: string };
-  breakoutTriggerPrice: number;
+  preferredEntryZone: { min: number; max: number; labelAr: string } | null;
+  alternativeEntryZone: { min: number; max: number; labelAr: string } | null;
+  breakoutTriggerPrice: number | null;
+  entryConfirmationAr?: string;
   entryConditionsAr: string[];
   invalidationConditionsAr: string[];
-  stopLossPrice: number;
-  stopLossPct: number;
+  stopLossPrice: number | null;
+  stopLossPct: number | null;
   stopLossLogicAr: string;
-  target1: { price: number; upsidePct: number; rationaleAr: string };
-  target2: { price: number; upsidePct: number; rationaleAr: string };
-  target3: { price: number; upsidePct: number; rationaleAr: string };
-  rewardRiskRatio: number;
-  estimatedFairValue: number;
-  fairValueUpsidePct: number;
-  marginOfSafetyPct: number;
+  target1: { price: number; upsidePct: number; rationaleAr: string } | null;
+  target2: { price: number; upsidePct: number; rationaleAr: string } | null;
+  target3: { price: number; upsidePct: number; rationaleAr: string } | null;
+  targetNotesAr?: string;
+  rewardRiskRatio: number | null;
+  expectedUpsidePct?: number | null;
+  nearestSupport?: number | null;
+  nearestResistance?: number | null;
+  relativeVolume?: number | null;
+  selectionReasonsAr?: string[];
+  potentialRisksAr?: string[];
+  estimatedFairValue: number | null;
+  fairValueUpsidePct: number | null;
+  marginOfSafetyPct: number | null;
   currentTrendAr: string;
   expectedTrendAr: string;
   riskGates: { passed: boolean; gateName: string; gateNameAr: string; detailsAr: string }[];
   allGatesPassed: boolean;
-  bullishScenario: { directionAr: string; supportingConditionsAr: string[]; keyLevelsAr: string; invalidationTriggerAr: string };
-  bearishScenario: { directionAr: string; supportingConditionsAr: string[]; keyLevelsAr: string; invalidationTriggerAr: string };
-  neutralScenario: { directionAr: string; supportingConditionsAr: string[]; keyLevelsAr: string; invalidationTriggerAr: string };
+  bullishScenario: ScenarioPlan | null;
+  bearishScenario: ScenarioPlan | null;
+  neutralScenario: ScenarioPlan | null;
   positiveFactorsAr: string[];
   negativeFactorsAr: string[];
   thingsToMonitorAr: string[];
@@ -334,11 +430,31 @@ export interface DetailedStockPayload {
   candlesDaily: Candle[];
   candlesWeekly: Candle[];
   candlesMonthly: Candle[];
+  candleStatus?: {
+    dailyReal: boolean;
+    dailyCount: number;
+    dailyLastDate: string | null;
+    dailyIsStale?: boolean;
+    dailyStaleDays?: number | null;
+    dailyStaleReasonAr?: string | null;
+    dailyError: string | null;
+    weeklyReal: boolean;
+    monthlyReal: boolean;
+  };
+  technicalStatus?: {
+    available: boolean;
+    reasonAr: string | null;
+  };
   multiSourceComparison: any;
-  technicalAnalysis: TechnicalIndicatorsResult;
+  technicalAnalysis: TechnicalIndicatorsResult | null;
   fundamentalAnalysis: FundamentalDataResult;
   fairValueValuation: FairValueResult;
   newsDisclosures: NewsItem[];
+  newsStatus?: {
+    online: boolean;
+    lastFetchedAt: string | null;
+    error: string | null;
+  };
   upcomingEvents: UpcomingEvent[];
   aiDecision: InvestmentPlanResult;
   peers: any[];
@@ -359,4 +475,3 @@ export interface ChatMessage {
   mentionedTickers?: string[];
   isError?: boolean;
 }
-

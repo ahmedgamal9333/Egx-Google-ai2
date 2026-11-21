@@ -14,7 +14,8 @@ import {
   Settings,
   X,
   TrendingUp,
-  MessageSquareText
+  MessageSquareText,
+  AlertTriangle
 } from 'lucide-react';
 
 export type ActiveTab =
@@ -49,23 +50,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen = false,
   onCloseMobile
 }) => {
-  const egx30Chg = marketOverview?.egx30?.changePct ?? -0.91;
-  const egx30Badge = egx30Chg >= 0 ? `+${egx30Chg}%` : `${egx30Chg}%`;
+  const egx30Chg: number | null = marketOverview?.egx30?.changePct ?? null;
+  const egx30Badge = egx30Chg !== null ? (egx30Chg >= 0 ? `+${egx30Chg}%` : `${egx30Chg}%`) : '—';
+  const freshness = marketOverview?.dataStatus?.freshnessStatus;
+  const isLive = freshness === 'LIVE';
+  const isFailed = freshness === 'FAILED';
+
+  const sourceHealthBadge = isLive
+    ? (lang === 'ar' ? 'متصل' : 'Live')
+    : isFailed
+    ? (lang === 'ar' ? 'منقطع' : 'Offline')
+    : (lang === 'ar' ? 'قديم' : 'Stale');
 
   const navItems = [
     {
       id: 'DASHBOARD' as ActiveTab,
       labelAr: 'لوحة القيادة',
       labelEn: 'Dashboard',
-      icon: LayoutDashboard,
-      badge: 'النبض'
+      icon: LayoutDashboard
     },
     {
       id: 'AI_CHAT' as ActiveTab,
       labelAr: 'المحلل الحواري الذكي',
       labelEn: 'AI Analyst Chat',
       icon: MessageSquareText,
-      badge: 'AI Chat'
+      badge: 'AI'
     },
     {
       id: 'MARKET' as ActiveTab,
@@ -78,22 +87,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'SCREENER' as ActiveTab,
       labelAr: 'الماسح الذكي للأسهم',
       labelEn: 'AI Stock Screener',
-      icon: Filter,
-      badge: 'فلتر'
+      icon: Filter
     },
     {
       id: 'ANALYSIS' as ActiveTab,
       labelAr: 'تحليل السهم المفصل',
       labelEn: 'Detailed Stock Analysis',
-      icon: BarChart3,
-      badge: 'عميق'
+      icon: BarChart3
     },
     {
       id: 'NEWS' as ActiveTab,
       labelAr: 'الأخبار والإفصاحات',
       labelEn: 'News & Disclosures',
-      icon: Newspaper,
-      badge: 'لحظي'
+      icon: Newspaper
     },
     {
       id: 'SECTORS' as ActiveTab,
@@ -105,8 +111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'PORTFOLIO' as ActiveTab,
       labelAr: 'إدارة المحفظة',
       labelEn: 'Portfolio Management',
-      icon: Briefcase,
-      badge: 'AI Advisor'
+      icon: Briefcase
     },
     {
       id: 'WATCHLIST' as ActiveTab,
@@ -118,8 +123,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'HISTORY' as ActiveTab,
       labelAr: 'سجل التوصيات وتدقيق الأداء',
       labelEn: 'Recommendation History',
-      icon: History,
-      badge: 'Win 87%'
+      icon: History
     },
     {
       id: 'BACKTEST' as ActiveTab,
@@ -132,7 +136,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       labelAr: 'مصادر البيانات وجودتها',
       labelEn: 'Data Sources & Quality',
       icon: Database,
-      badge: '99%'
+      badge: sourceHealthBadge
     },
     {
       id: 'SETTINGS' as ActiveTab,
@@ -144,7 +148,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      {/* Mobile Backdrop Overlay */}
       {isMobileOpen && (
         <div
           onClick={onCloseMobile}
@@ -152,7 +155,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
       )}
 
-      {/* Main Sidebar Element */}
       <aside
         className={`fixed lg:sticky top-0 lg:top-[57px] right-0 z-50 lg:z-30 h-screen lg:h-[calc(100vh-57px)] w-72 lg:w-64 bg-slate-950 border-l border-slate-800/90 flex flex-col justify-between p-3.5 overflow-y-auto transition-transform duration-300 ease-in-out ${
           isMobileOpen
@@ -161,7 +163,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }`}
       >
         <div className="space-y-1">
-          {/* Mobile Header with close button */}
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 lg:hidden">
             <span className="font-bold text-sm text-white">
               {lang === 'ar' ? 'القائمة الرئيسية' : 'Menu Navigation'}
@@ -206,7 +207,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {item.badge && (
                   <span
                     className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-                      isActive
+                      item.id === 'SOURCES' && isFailed
+                        ? 'bg-rose-500/20 text-rose-300'
+                        : isActive
                         ? 'bg-emerald-500/30 text-emerald-300'
                         : 'bg-slate-800 text-slate-400'
                     }`}
@@ -223,18 +226,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="pt-3 border-t border-slate-800/80 px-1 text-xs text-slate-400 mt-4">
           <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 flex flex-col gap-1.5">
             <div className="flex items-center justify-between text-[11px] text-slate-300 font-bold">
-              <span className="flex items-center gap-1 text-emerald-400">
-                <TrendingUp className="w-3.5 h-3.5" />
+              <span className={`flex items-center gap-1 ${isFailed ? 'text-rose-400' : isLive ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {isFailed ? <AlertTriangle className="w-3.5 h-3.5" /> : <TrendingUp className="w-3.5 h-3.5" />}
                 {marketOverview?.marketStatusAr
-                  ? (lang === 'ar' ? marketOverview.marketStatusAr.split('(')[0].trim() : 'Market Active')
-                  : (lang === 'ar' ? 'السوق نشط' : 'Market Active')}
+                  ? (lang === 'ar' ? marketOverview.marketStatusAr.split('(')[0].trim() : sourceHealthBadge)
+                  : sourceHealthBadge}
               </span>
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              {isLive ? (
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              ) : (
+                <span className={`w-2 h-2 rounded-full ${isFailed ? 'bg-rose-500' : 'bg-amber-400'}`} />
+              )}
             </div>
             <div className="text-[10px] text-slate-400 leading-tight">
-              {lang === 'ar'
-                ? `تغطية شاملة لـ ${marketOverview?.totalListedStocksCount || 260} سهماً مدرجاً بمصادر حية وموثقة.`
-                : `Full ${marketOverview?.totalListedStocksCount || 260} EGX stock coverage with live validated feeds.`}
+              {marketOverview?.dataStatus?.lastSyncedAt
+                ? (lang === 'ar'
+                    ? `آخر مزامنة: ${marketOverview.dataStatus.lastSyncedAt.replace('T', ' ').substring(0, 16)}`
+                    : `Synced: ${marketOverview.dataStatus.lastSyncedAt.replace('T', ' ').substring(0, 16)}`)
+                : (lang === 'ar'
+                    ? `تغطية ${marketOverview?.totalListedStocksCount || '—'} سهماً بمصادر موثقة.`
+                    : `${marketOverview?.totalListedStocksCount || '—'} verified EGX stocks.`)}
             </div>
           </div>
         </div>

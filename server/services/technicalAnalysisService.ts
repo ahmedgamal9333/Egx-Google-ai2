@@ -47,7 +47,21 @@ export interface LastCandlesAnalysis {
   dataSourceLabel: string;
 }
 
+export interface TechnicalScoreComponent {
+  labelAr: string;
+  conditionAr: string;
+  points: number;
+}
+
 export interface TechnicalIndicatorsResult {
+  isRealData: boolean;
+  candlesCount: number;
+  firstCandleDate: string;
+  lastCandleDate: string;
+  isStale: boolean;
+  staleDays: number | null;
+  staleReasonAr: string | null;
+
   currentPrice: number;
   previousClose: number;
   changePct: number;
@@ -113,10 +127,21 @@ export interface TechnicalIndicatorsResult {
   resistanceZones: SupportResistanceZone[];
   fibonacciLevels: FibonacciLevel[];
 
-  // Patterns & Breakout
+  // Patterns & Breakout & Structure
   patternsDetected: string[];
   breakoutStatus: 'BREAKOUT_UP' | 'BREAKDOWN' | 'CONSOLIDATING' | 'NEAR_RESISTANCE' | 'NEAR_SUPPORT';
+  higherHighsHigherLows?: boolean;
+  falseBreakoutDetected?: boolean;
+  falseBreakoutNoteAr?: string | null;
+  volatilityContraction?: {
+    detected: boolean;
+    bandwidthPct: number;
+    rangeCompressionPct: number;
+    noteAr: string;
+  };
   technicalScore: number;
+  technicalScoreBreakdown: TechnicalScoreComponent[];
+  technicalScoreFormulaAr: string;
   lastCandlesAnalysis?: LastCandlesAnalysis;
   pivotPoints?: {
     classic: { s3: number; s2: number; s1: number; p: number; r1: number; r2: number; r3: number };
@@ -129,14 +154,48 @@ export interface TechnicalIndicatorsResult {
   };
 }
 
+export interface SafeTechnicalResult {
+  status: 'OK' | 'INSUFFICIENT_DATA';
+  reasonAr?: string;
+  result?: TechnicalIndicatorsResult;
+}
+
 export class TechnicalAnalysisEngine {
+  public static calculateSafe(
+    candles: Candle[],
+    tvSnapshot?: TradingViewChartSnapshot | null,
+    meta?: { isRealData?: boolean; isStale?: boolean; staleDays?: number | null; staleReasonAr?: string | null; error?: string | null }
+  ): SafeTechnicalResult {
+    const isReal = meta?.isRealData ?? false;
+    if (!isReal) {
+      return {
+        status: 'INSUFFICIENT_DATA',
+        reasonAr: meta?.error || 'تعذر الحصول على شموع تاريخية حقيقية؛ يرفض النظام حساب مؤشرات فنية على بيانات غير حقيقية.'
+      };
+    }
+    if (!candles || candles.length < 30) {
+      return {
+        status: 'INSUFFICIENT_DATA',
+        reasonAr: `عدد الشموع التاريخية المتوفرة (${candles?.length ?? 0}) أقل من الحد الأدنى الإلزامي (30 شمعة) لإجراء التحليل الفني.`
+      };
+    }
+    return {
+      status: 'OK',
+      result: this.calculate(candles, tvSnapshot, true, meta)
+    };
+  }
+
   public static calculate(
     candles: Candle[],
     tvSnapshot?: TradingViewChartSnapshot | null,
-    isRealCandles = false
+    isRealCandles = false,
+    meta?: { isStale?: boolean; staleDays?: number | null; staleReasonAr?: string | null }
   ): TechnicalIndicatorsResult {
+    if (!isRealCandles) {
+      throw new Error('Technical analysis refused: candles must be verified real historical OHLCV data');
+    }
     if (!candles || candles.length < 30) {
-      throw new Error('Insufficient candle data for technical calculation');
+      throw new Error(`Insufficient real candle data for technical calculation (got ${candles?.length ?? 0}, need >= 30)`);
     }
 
     const n = candles.length;
@@ -151,13 +210,13 @@ export class TechnicalAnalysisEngine {
       ? Number((((currentPrice - previousClose) / previousClose) * 100).toFixed(2))
       : 0;
 
-    // SMAs (align with TradingView live snapshot when available)
+    // SMAs
     const sma20 = Number((tvSnapshot?.sma20 ?? this.calcSMA(closes, 20)).toFixed(2));
     const sma50 = Number((tvSnapshot?.sma50 ?? this.calcSMA(closes, 50)).toFixed(2));
     const sma100 = this.calcSMA(closes, 100);
     const sma200 = Number((tvSnapshot?.sma200 ?? this.calcSMA(closes, 200)).toFixed(2));
 
-    // EMAs (align with TradingView live snapshot when available)
+    // EMAs
     const ema9 = Number((tvSnapshot?.ema9 ?? this.calcEMA(closes, 9)).toFixed(2));
     const ema20 = Number((tvSnapshot?.ema20 ?? this.calcEMA(closes, 20)).toFixed(2));
     const ema50 = Number((tvSnapshot?.ema50 ?? this.calcEMA(closes, 50)).toFixed(2));
@@ -292,7 +351,6 @@ export class TechnicalAnalysisEngine {
       trendAlignmentStatusAr = 'محاولة اختراق متوسط 50 يوماً بدعم من EMA20';
     }
 
-    // Authentic chart-based Support & Resistance zones (Real Swings + TradingView Pivots + EMAs)
     const { supportZones, resistanceZones } = this.findSupportResistance(
       candles,
       currentPrice,
@@ -304,26 +362,61 @@ export class TechnicalAnalysisEngine {
       tvSnapshot
     );
 
-    // Fibonacci Retracements from real recent 90-bar swing high & swing low
     const fibonacciLevels = this.calcFibonacci(candles);
-
-    // Candlestick patterns & breakout evaluation
     const patternsDetected = this.detectPatterns(candles);
     const nearestRes = resistanceZones[0]?.priceLevel || currentPrice * 1.04;
     const nearestSup = supportZones[0]?.priceLevel || currentPrice * 0.96;
 
+    // Higher-Highs / Higher-Lows structural check (last 20 bars vs prior 20 bars)
+    let higherHighsHigherLows = false;
+    if (candles.length >= 40) {
+      const recent20 = candles.slice(-20);
+      const prior20 = candles.slice(-40, -20);
+      const recentHigh = Math.max(...recent20.map(c => c.high));
+      const recentLow = Math.min(...recent20.map(c => c.low));
+      const priorHigh = Math.max(...prior20.map(c => c.high));
+      const priorLow = Math.min(...prior20.map(c => c.low));
+      higherHighsHigherLows = recentHigh > priorHigh && recentLow >= priorLow * 0.99;
+    }
+
+    // Volatility contraction & narrow-range accumulation indicator (strictly price/volume, no institutional ownership claims)
+    const last10 = candles.slice(-10);
+    const range10Max = Math.max(...last10.map(c => c.high));
+    const range10Min = Math.min(...last10.map(c => c.low));
+    const rangeCompressionPct = range10Min > 0 ? Number((((range10Max - range10Min) / range10Min) * 100).toFixed(2)) : 0;
+    const vcpDetected = bb.bandwidthPct <= 11 || rangeCompressionPct <= 7.5;
+    const volatilityContraction = {
+      detected: vcpDetected,
+      bandwidthPct: bb.bandwidthPct,
+      rangeCompressionPct,
+      noteAr: vcpDetected
+        ? `تضيق تذبذب سعري (نطاق 10 جلسات ${rangeCompressionPct}% | عرض بولينجر ${bb.bandwidthPct}%) يعكس هدوءاً سعرياً محتمل الاستعداد للحركة دون الجزم بتدفق مؤسسي غير معلن.`
+        : `تذبذب اعتيادي (نطاق 10 جلسات ${rangeCompressionPct}% | عرض بولينجر ${bb.bandwidthPct}%).`
+    };
+
+    // False breakout / upper-wick rejection check
+    const curRange = Math.max(0.0001, current.high - current.low);
+    const upperWick = current.high - Math.max(current.open, current.close);
+    const failedAboveRes = current.high > nearestRes * 1.002 && current.close < nearestRes * 0.998;
+    const heavyUpperWick = upperWick / curRange >= 0.5 && current.close <= current.open;
+    const falseBreakoutDetected = failedAboveRes || heavyUpperWick;
+    const falseBreakoutNoteAr = failedAboveRes
+      ? `رُصد اختراق كاذب لحظي أعلى ${nearestRes} فشل في الإغلاق فوق المقاومة`
+      : heavyUpperWick
+      ? `ذيل علوي بيعي طويل (${Math.round((upperWick / curRange) * 100)}% من مدى الشمعة) يعكس رفضاً عند القمة`
+      : null;
+
     let breakoutStatus: TechnicalIndicatorsResult['breakoutStatus'] = 'CONSOLIDATING';
-    if (currentPrice >= nearestRes * 0.995 && volumeSurge && current.close > current.open) {
+    if (currentPrice >= nearestRes * 0.998 && !falseBreakoutDetected && volumeSurge && current.close > current.open) {
       breakoutStatus = 'BREAKOUT_UP';
     } else if (currentPrice <= nearestSup * 1.015 && currentPrice >= nearestSup * 0.985) {
       breakoutStatus = 'NEAR_SUPPORT';
-    } else if (currentPrice >= nearestRes * 0.982) {
+    } else if (currentPrice >= nearestRes * 0.978 && !falseBreakoutDetected) {
       breakoutStatus = 'NEAR_RESISTANCE';
     } else if (currentPrice < nearestSup * 0.98) {
       breakoutStatus = 'BREAKDOWN';
     }
 
-    // Detailed reading of the last 5 candles
     const lastCandlesAnalysis = this.analyzeLastCandles(
       candles,
       volumeSma20,
@@ -331,36 +424,78 @@ export class TechnicalAnalysisEngine {
       resistanceZones,
       ema20,
       ema50,
-      tvSnapshot,
-      isRealCandles
+      tvSnapshot
     );
 
-    // Score from 0 to 100 based on verified indicators
-    let techScore = 50;
-    if (currentPrice > ema20) techScore += 9;
-    else techScore -= 6;
-    if (currentPrice > ema50) techScore += 9;
-    else techScore -= 6;
-    if (currentPrice > ema200) techScore += 10;
-    else techScore -= 8;
+    // Explicit transparent mathematical technical score breakdown
+    const breakdown: TechnicalScoreComponent[] = [
+      { labelAr: 'القاعدة المحايدة (Base)', conditionAr: 'نقطة بداية متوازنة', points: 50 }
+    ];
 
-    if (rsi14 >= 50 && rsi14 <= 68) techScore += 9;
-    else if (rsi14 > 68) techScore += 3;
-    else if (rsi14 <= 32) techScore += 4;
-    else if (rsi14 < 45) techScore -= 8;
+    let rawTechScore = 50;
 
-    if (macdResult.signal === 'BULLISH_CROSS') techScore += 11;
-    else if (macdResult.signal === 'BULLISH') techScore += 8;
-    else techScore -= 8;
+    const ema20Pts = currentPrice > ema20 ? 9 : -6;
+    rawTechScore += ema20Pts;
+    breakdown.push({
+      labelAr: 'متوسط EMA20',
+      conditionAr: `السعر (${currentPrice}) ${currentPrice > ema20 ? '>' : '<='} EMA20 (${ema20})`,
+      points: ema20Pts
+    });
 
-    if (volumeSurge && changePct > 0) techScore += 7;
-    if (breakoutStatus === 'BREAKOUT_UP') techScore += 6;
-    if (adx.adx >= 22 && adx.plusDI > adx.minusDI) techScore += 6;
+    const ema50Pts = currentPrice > ema50 ? 9 : -6;
+    rawTechScore += ema50Pts;
+    breakdown.push({
+      labelAr: 'متوسط EMA50',
+      conditionAr: `السعر (${currentPrice}) ${currentPrice > ema50 ? '>' : '<='} EMA50 (${ema50})`,
+      points: ema50Pts
+    });
 
-    // Blend with TradingView official Recommend.All (-1 to +1) if available
+    const ema200Pts = currentPrice > ema200 ? 10 : -8;
+    rawTechScore += ema200Pts;
+    breakdown.push({
+      labelAr: 'متوسط EMA200',
+      conditionAr: `السعر (${currentPrice}) ${currentPrice > ema200 ? '>' : '<='} EMA200 (${ema200})`,
+      points: ema200Pts
+    });
+
+    let rsiPts = 0;
+    let rsiCond = `RSI (${rsi14}) محايد (45 - 50)`;
+    if (rsi14 >= 50 && rsi14 <= 68) { rsiPts = 9; rsiCond = `RSI (${rsi14}) في منطقة الزخم الصحي (50 - 68)`; }
+    else if (rsi14 > 68) { rsiPts = 3; rsiCond = `RSI (${rsi14}) تشبع شرائي (> 68)`; }
+    else if (rsi14 <= 32) { rsiPts = 4; rsiCond = `RSI (${rsi14}) تشبع بيعي قريب للارتداد (<= 32)`; }
+    else if (rsi14 < 45) { rsiPts = -8; rsiCond = `RSI (${rsi14}) زخم هابط (< 45)`; }
+    if (rsiPts !== 0) {
+      rawTechScore += rsiPts;
+      breakdown.push({ labelAr: 'مؤشر القوة النسبية RSI(14)', conditionAr: rsiCond, points: rsiPts });
+    }
+
+    const macdPts = macdResult.signal === 'BULLISH_CROSS' ? 11 : macdResult.signal === 'BULLISH' ? 8 : -8;
+    rawTechScore += macdPts;
+    breakdown.push({
+      labelAr: 'مؤشر MACD',
+      conditionAr: `MACD (${macdLine}) مقابل Signal (${signalLine}) -> ${macdResult.signal}`,
+      points: macdPts
+    });
+
+    if (volumeSurge && changePct > 0) {
+      rawTechScore += 7;
+      breakdown.push({ labelAr: 'تأكيد السيولة الصاعدة', conditionAr: `RVOL (${relativeVolume}x >= 1.4x) مع إغلاق صاعد (+${changePct}%)`, points: 7 });
+    }
+    if (breakoutStatus === 'BREAKOUT_UP') {
+      rawTechScore += 6;
+      breakdown.push({ labelAr: 'اختراق مقاومة', conditionAr: 'اختراق أعلى المقاومة الأولى بسيولة مؤكدة', points: 6 });
+    }
+    if (adx.adx >= 22 && adx.plusDI > adx.minusDI) {
+      rawTechScore += 6;
+      breakdown.push({ labelAr: 'قوة الاتجاه ADX', conditionAr: `ADX (${adx.adx} >= 22) مع تفوق +DI (${adx.plusDI} > ${adx.minusDI})`, points: 6 });
+    }
+
+    let techScore = rawTechScore;
+    let formulaAr = `مجموع نقاط المؤشرات = ${breakdown.map(b => `${b.points >= 0 ? `+${b.points}` : b.points}`).join(' ')} = ${rawTechScore}`;
     if (tvSnapshot?.recommendAll !== null && tvSnapshot?.recommendAll !== undefined) {
       const tvScore = Math.round(((tvSnapshot.recommendAll + 1) / 2) * 100);
-      techScore = Math.round(techScore * 0.65 + tvScore * 0.35);
+      techScore = Math.round(rawTechScore * 0.65 + tvScore * 0.35);
+      formulaAr += ` -> دمج مع تقييم TradingView (${tvScore}/100): (${rawTechScore}×0.65) + (${tvScore}×0.35) = ${techScore}`;
     }
     techScore = Math.max(12, Math.min(95, techScore));
 
@@ -385,6 +520,13 @@ export class TechnicalAnalysisEngine {
       : undefined;
 
     return {
+      isRealData: true,
+      candlesCount: candles.length,
+      firstCandleDate: candles[0].date,
+      lastCandleDate: candles[n - 1].date,
+      isStale: meta?.isStale ?? false,
+      staleDays: meta?.staleDays ?? null,
+      staleReasonAr: meta?.staleReasonAr ?? null,
       currentPrice,
       previousClose,
       changePct,
@@ -420,7 +562,13 @@ export class TechnicalAnalysisEngine {
       fibonacciLevels,
       patternsDetected,
       breakoutStatus,
+      higherHighsHigherLows,
+      falseBreakoutDetected,
+      falseBreakoutNoteAr,
+      volatilityContraction,
       technicalScore: techScore,
+      technicalScoreBreakdown: breakdown,
+      technicalScoreFormulaAr: formulaAr,
       lastCandlesAnalysis,
       pivotPoints
     };
@@ -600,10 +748,6 @@ export class TechnicalAnalysisEngine {
     return Math.round(obv);
   }
 
-  /**
-   * Finds real Support & Resistance zones from actual Swing Highs/Lows,
-   * TradingView Classic/Fibonacci Pivots, 1M/3M/52W High-Low, and Moving Averages.
-   */
   private static findSupportResistance(
     candles: Candle[],
     currentPrice: number,
@@ -630,7 +774,6 @@ export class TechnicalAnalysisEngine {
     const resCandidates: LevelCandidate[] = [];
     const supCandidates: LevelCandidate[] = [];
 
-    // 1. Detect Swing Highs & Swing Lows on real chart bars (window radius = 3)
     const swingHighs: number[] = [];
     const swingLows: number[] = [];
     for (let i = 3; i < lookback.length - 3; i++) {
@@ -647,7 +790,6 @@ export class TechnicalAnalysisEngine {
       if (isLow) swingLows.push(l);
     }
 
-    // Count touches across bars near any level
     const countTouches = (level: number) => {
       const tol = Math.max(atr * 0.45, level * 0.008);
       let hits = 0;
@@ -669,7 +811,6 @@ export class TechnicalAnalysisEngine {
           label: `قمة سوينغ فعلية على الشارت (${touches} اختبارات)`
         });
       } else if (h < currentPrice * 0.996) {
-        // Broken resistance turned support
         supCandidates.push({
           price: h,
           weight: 2 + Math.min(3, touches),
@@ -691,7 +832,6 @@ export class TechnicalAnalysisEngine {
       }
     });
 
-    // 2. TradingView Pivots & Reference Highs/Lows
     const addRefLevel = (val: number | null | undefined, label: string, weight = 3) => {
       if (!val || !Number.isFinite(val) || val <= 0) return;
       const touches = countTouches(val);
@@ -720,14 +860,12 @@ export class TechnicalAnalysisEngine {
       addRefLevel(tvSnapshot.low3M, 'أدنى قاع خلال 3 أشهر (3M Low)', 5);
     }
 
-    // 3. Key Moving Averages & Bollinger Bands
     addRefLevel(ema20, 'متوسط EMA 20 الديناميكي', 3);
     addRefLevel(ema50, 'متوسط EMA 50 الرئيسي', 4);
     addRefLevel(ema200, 'متوسط EMA 200 الهيكلي طويل الأجل', 5);
     addRefLevel(bb.upper, 'الحد العلوي لمؤشر بولينجر (BB Upper)', 2);
     addRefLevel(bb.lower, 'الحد السفلي لمؤشر بولينجر (BB Lower)', 2);
 
-    // Cluster & deduplicate candidates sorted nearest to currentPrice
     const clusterLevels = (
       candidates: LevelCandidate[],
       direction: 'UP' | 'DOWN'
@@ -757,25 +895,6 @@ export class TechnicalAnalysisEngine {
         });
 
         if (selected.length >= 3) break;
-      }
-
-      // Ensure at least 3 well-spaced zones even at All-Time Highs/Lows
-      const step = Math.max(atr * 1.6, currentPrice * 0.038);
-      while (selected.length < 3) {
-        const lastPrice = selected.length > 0 ? selected[selected.length - 1].priceLevel : currentPrice;
-        const nextLevel = direction === 'UP'
-          ? Number((lastPrice + step).toFixed(2))
-          : Number(Math.max(0.05, lastPrice - step).toFixed(2));
-        selected.push({
-          priceLevel: nextLevel,
-          type: direction === 'UP' ? 'RESISTANCE' : 'SUPPORT',
-          strength: 'MODERATE',
-          touches: 1,
-          description:
-            direction === 'UP'
-              ? `امتداد سعري محسوب بمدى التذبذب (${selected.length + 1}x ATR)`
-              : `مستوى دعم محسوب بمدى التذبذب (${selected.length + 1}x ATR)`
-        });
       }
 
       return selected;
@@ -817,27 +936,21 @@ export class TechnicalAnalysisEngine {
     const lowerWick1 = Math.min(c1.open, c1.close) - c1.low;
     const upperWick1 = c1.high - Math.max(c1.open, c1.close);
 
-    // Bullish Engulfing
     if (c2.close < c2.open && c1.close > c1.open && c1.close >= c2.open && c1.open <= c2.close) {
       patterns.push('شمعة ابتلاعية صاعدة (Bullish Engulfing)');
     }
-    // Bearish Engulfing
     if (c2.close > c2.open && c1.close < c1.open && c1.open >= c2.close && c1.close <= c2.open) {
       patterns.push('شمعة ابتلاعية هابطة (Bearish Engulfing)');
     }
-    // Hammer / Pin Bar
     if (range1 > 0 && lowerWick1 >= Math.max(body1 * 1.8, range1 * 0.45) && upperWick1 <= range1 * 0.25) {
       patterns.push('شمعة المطرقة / ذيل شرائي داعم (Hammer)');
     }
-    // Shooting Star / Upper Rejection
     if (range1 > 0 && upperWick1 >= Math.max(body1 * 1.8, range1 * 0.45) && lowerWick1 <= range1 * 0.25) {
       patterns.push('شمعة شهاب ساقط / رفض بيعي علوي (Shooting Star)');
     }
-    // Doji
     if (range1 > 0 && body1 <= range1 * 0.15) {
       patterns.push('شمعة دوجي حائرة (Doji - توازن العرض والطلب)');
     }
-    // Morning Star
     if (n >= 3) {
       const c3 = candles[n - 3];
       if (c3.close < c3.open && Math.abs(c2.close - c2.open) < body1 * 0.55 && c1.close > (c3.open + c3.close) / 2 && c1.close > c1.open) {
@@ -858,9 +971,6 @@ export class TechnicalAnalysisEngine {
     return patterns;
   }
 
-  /**
-   * Detailed Arabic reading of the last 5 candles + Price Action context on TradingView chart.
-   */
   private static analyzeLastCandles(
     candles: Candle[],
     volumeSma20: number,
@@ -868,8 +978,7 @@ export class TechnicalAnalysisEngine {
     resistanceZones: SupportResistanceZone[],
     ema20: number,
     ema50: number,
-    tvSnapshot?: TradingViewChartSnapshot | null,
-    isRealCandles = false
+    tvSnapshot?: TradingViewChartSnapshot | null
   ): LastCandlesAnalysis {
     const sliceStart = Math.max(0, candles.length - 5);
     const recent = candles.slice(sliceStart);
@@ -903,31 +1012,31 @@ export class TechnicalAnalysisEngine {
       if (bodyRatio <= 0.14) {
         candleTypeAr = 'شمعة دوجي حائرة (Doji)';
         candleSignal = 'NEUTRAL';
-        noteAr = 'تقارب الافتتاح والإغلاق يعكس تردداً وتوازناً بين المشترين والبائعين';
+        noteAr = 'تقارب الافتتاح والإغلاق يعكس توازناً بين العرض والطلب';
       } else if (lowerRatio >= 0.45 && upperRatio <= 0.25) {
         candleTypeAr = isBull ? 'مطرقة شرائية (Bullish Hammer)' : 'ذيل سفلي داعم (Pin Bar)';
         candleSignal = 'BULLISH';
-        noteAr = 'رفض واضح للهبوط وظهور سيولة شرائية دافعت عن القاع اليومي';
+        noteAr = 'رفض واضح للهبوط وظهور سيولة دافعت عن القاع اليومي';
       } else if (upperRatio >= 0.45 && lowerRatio <= 0.25) {
         candleTypeAr = 'شهاب ساقط / ضغط علوي (Shooting Star)';
         candleSignal = 'BEARISH';
-        noteAr = 'ظهور عمليات جني أرباح وضغط بيعي عند القمة اليومية';
+        noteAr = 'ظهور جني أرباح وضغط بيعي قرب القمة اليومية';
       } else if (isBull && bodyRatio >= 0.65) {
         candleTypeAr = 'شمعة شرائية قوية (Bullish Marubozu)';
         candleSignal = 'BULLISH';
-        noteAr = 'سيطرة واضحة للمشترين مع إغلاق قرب أعلى سعر في الجلسة';
+        noteAr = 'سيطرة واضحة للمشترين وإغلاق قرب أعلى سعر في الجلسة';
       } else if (isBear && bodyRatio >= 0.65) {
         candleTypeAr = 'شمعة هابطة ضاغطة (Bearish Candle)';
         candleSignal = 'BEARISH';
-        noteAr = 'ضغط بيعي مستمر وإغلاق قريب من أدنى سعر في الجلسة';
+        noteAr = 'ضغط بيعي وإغلاق قريب من أدنى سعر في الجلسة';
       } else if (isBull) {
         candleTypeAr = 'شمعة صاعدة متوازنة';
         candleSignal = 'BULLISH';
-        noteAr = 'أفضلية معتدلة للمشترين مع إغلاق أعلى من الافتتاح';
+        noteAr = 'إغلاق أعلى من الافتتاح';
       } else if (isBear) {
         candleTypeAr = 'شمعة هابطة تصحيحية';
         candleSignal = 'BEARISH';
-        noteAr = 'تراجع طفيف أو جني أرباح محدود دون كسر حاد';
+        noteAr = 'إغلاق أدنى من الافتتاح';
       }
 
       if (volumeRatio >= 1.4) {
@@ -971,24 +1080,23 @@ export class TechnicalAnalysisEngine {
       shortTermBias = 'BEARISH';
     }
 
-    // TradingView official summary rating
-    let tradingViewRatingAr = 'محايد (Neutral)';
+    let tradingViewRatingAr = 'غير متاح من TradingView';
     const rec = tvSnapshot?.recommendAll;
     if (typeof rec === 'number') {
       if (rec >= 0.5) tradingViewRatingAr = 'شراء قوي (Strong Buy)';
       else if (rec >= 0.1) tradingViewRatingAr = 'شراء (Buy)';
       else if (rec <= -0.5) tradingViewRatingAr = 'بيع قوي (Strong Sell)';
       else if (rec <= -0.1) tradingViewRatingAr = 'بيع (Sell)';
+      else tradingViewRatingAr = 'محايد (Neutral)';
     }
 
-    // Dominant price action narrative
     let dominantPriceActionAr = '';
     if (lastBar.candleSignal === 'BEARISH' && prevBar.candleSignal === 'BULLISH') {
-      dominantPriceActionAr = `جني أرباح وتصحيح طفيف بعد موجة صعود، مع مراقبة الدعم ${sup1}`;
+      dominantPriceActionAr = `جني أرباح طفيف مع مراقبة الدعم ${sup1}`;
     } else if (lastBar.candleSignal === 'BULLISH' && lastBar.volumeRatio >= 1.3) {
       dominantPriceActionAr = `زخم شرائي مدعوم بالسيولة يتجه لاختبار المقاومة ${res1}`;
     } else if (lastBar.close >= ema20 && lastBar.close >= ema50) {
-      dominantPriceActionAr = `تماسك إيجابي أعلى المتوسطين (EMA20: ${ema20} / EMA50: ${ema50})`;
+      dominantPriceActionAr = `تماسك أعلى المتوسطين (EMA20: ${ema20} / EMA50: ${ema50})`;
     } else if (lastBar.close < ema20 && lastBar.close < ema50) {
       dominantPriceActionAr = `ضغط بيعي دون المتوسطات المتحركة قرب دعم ${sup1}`;
     } else {
@@ -999,9 +1107,9 @@ export class TechnicalAnalysisEngine {
     const distToSupPct = lastBar.close > 0 ? Number((((lastBar.close - sup1) / lastBar.close) * 100).toFixed(1)) : 0;
 
     const candlestickSummaryAr = [
-      `خلال آخر ${recentBars.length} جلسات تحرك السهم من ${firstBar.open} إلى ${lastBar.close} (${fiveBarChangePct >= 0 ? `+${fiveBarChangePct}%` : `${fiveBarChangePct}%`}) بواقع ${bullishCount} شموع إيجابية مقابل ${bearishCount} شموع سلبية.`,
+      `خلال آخر ${recentBars.length} جلسات (حتى ${lastBar.date}) تحرك السهم من ${firstBar.open} إلى ${lastBar.close} (${fiveBarChangePct >= 0 ? `+${fiveBarChangePct}%` : `${fiveBarChangePct}%`}) بواقع ${bullishCount} شموع إيجابية مقابل ${bearishCount} شموع سلبية.`,
       `آخر شمعة يومية (${lastBar.date}) أغلقت عند ${lastBar.close} (${lastBar.changePct >= 0 ? `+${lastBar.changePct}%` : `${lastBar.changePct}%`}) بنمط "${lastBar.candleTypeAr}"، حيث ${lastBar.noteAr}.`,
-      `السعر حالياً أعلى الدعم القريب (${sup1}) بمسافة ${distToSupPct}% وأسفل المقاومة المباشرة (${res1}) بمسافة ${distToResPct}%، وتقييم مؤشرات TradingView الإجمالي يشير إلى: "${tradingViewRatingAr}".`
+      `السعر حالياً أعلى الدعم (${sup1}) بمسافة ${distToSupPct}% وأسفل المقاومة (${res1}) بمسافة ${distToResPct}%.`
     ].join(' ');
 
     return {
@@ -1011,9 +1119,7 @@ export class TechnicalAnalysisEngine {
       candlestickSummaryAr,
       shortTermBias,
       tradingViewRatingAr,
-      dataSourceLabel: isRealCandles
-        ? `شموع فعلية (${candles.length} جلسة) + مؤشرات TradingView اللحظية`
-        : `تقديرات تاريخية + مؤشرات TradingView اللحظية`
+      dataSourceLabel: `شموع تاريخية حقيقية (${candles.length} جلسة حتى ${lastBar.date})${tvSnapshot ? ' + مؤشرات TradingView' : ''}`
     };
   }
 }

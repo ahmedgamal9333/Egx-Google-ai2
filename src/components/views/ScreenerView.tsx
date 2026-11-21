@@ -11,6 +11,19 @@ interface ScreenerViewProps {
 
 const PAGE_SIZE = 50;
 
+function compareNullableNumbers(
+  a: number | null | undefined,
+  b: number | null | undefined,
+  direction: 'asc' | 'desc'
+): number {
+  const aValid = typeof a === 'number' && Number.isFinite(a);
+  const bValid = typeof b === 'number' && Number.isFinite(b);
+  if (!aValid && !bValid) return 0;
+  if (!aValid) return 1; // Always push missing values to the bottom
+  if (!bValid) return -1;
+  return direction === 'desc' ? (b as number) - (a as number) : (a as number) - (b as number);
+}
+
 export const ScreenerView: React.FC<ScreenerViewProps> = ({
   stocks,
   onSelectStock,
@@ -19,6 +32,7 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
   const [search, setSearch] = useState('');
   const [selectedSector, setSelectedSector] = useState('ALL');
   const [selectedRec, setSelectedRec] = useState('ALL');
+  const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [selectedIndex, setSelectedIndex] = useState('ALL');
   const [sortBy, setSortBy] = useState<'SCORE' | 'UPSIDE' | 'PRICE' | 'PE' | 'RSI'>('SCORE');
   const [page, setPage] = useState(1);
@@ -39,24 +53,25 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
         const matchesSearch = !trimmed || rel > 0;
         const matchesSector = selectedSector === 'ALL' || s.sectorAr === selectedSector;
         const matchesRec = selectedRec === 'ALL' || s.recommendationBadge === selectedRec;
+        const matchesCategory = selectedCategory === 'ALL' || s.screenerCategory === selectedCategory;
         const matchesIndex = selectedIndex === 'ALL' || s.index === selectedIndex;
-        return matchesSearch && matchesSector && matchesRec && matchesIndex;
+        return matchesSearch && matchesSector && matchesRec && matchesCategory && matchesIndex;
       })
       .sort((a, b) => {
         if (trimmed && b.rel !== a.rel) return b.rel - a.rel;
-        if (sortBy === 'SCORE') return b.stock.quickScore - a.stock.quickScore;
-        if (sortBy === 'UPSIDE') return b.stock.fairValueUpsidePct - a.stock.fairValueUpsidePct;
-        if (sortBy === 'PRICE') return b.stock.currentPrice - a.stock.currentPrice;
-        if (sortBy === 'PE') return a.stock.peRatio - b.stock.peRatio;
-        if (sortBy === 'RSI') return b.stock.rsi14 - a.stock.rsi14;
+        if (sortBy === 'SCORE') return compareNullableNumbers(a.stock.quickScore, b.stock.quickScore, 'desc');
+        if (sortBy === 'UPSIDE') return compareNullableNumbers(a.stock.fairValueUpsidePct, b.stock.fairValueUpsidePct, 'desc');
+        if (sortBy === 'PRICE') return compareNullableNumbers(a.stock.currentPrice, b.stock.currentPrice, 'desc');
+        if (sortBy === 'PE') return compareNullableNumbers(a.stock.peRatio, b.stock.peRatio, 'asc');
+        if (sortBy === 'RSI') return compareNullableNumbers(a.stock.rsi14, b.stock.rsi14, 'desc');
         return 0;
       });
     return list.map(i => i.stock);
-  }, [stocks, search, selectedSector, selectedRec, selectedIndex, sortBy]);
+  }, [stocks, search, selectedSector, selectedRec, selectedCategory, selectedIndex, sortBy]);
 
   useEffect(() => {
     setPage(1);
-  }, [search, selectedSector, selectedRec, selectedIndex, sortBy]);
+  }, [search, selectedSector, selectedRec, selectedCategory, selectedIndex, sortBy]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const displayed = showAll ? filtered : filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -68,17 +83,21 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
         <div className="flex items-center gap-2 mb-1">
           <Filter className="w-4 h-4 text-emerald-400" />
           <span className="text-xs uppercase font-bold text-emerald-400 tracking-wider">
-            {lang === 'ar' ? `الماسح الفني والمالي الشامل (${stocks.length} سهم مصري)` : `EGX AI Stock Screener (${stocks.length} Stocks)`}
+            {lang === 'ar'
+              ? `الماسح الفني والمالي الشامل (${stocks.length} سهم مصري)`
+              : `EGX AI Stock Screener (${stocks.length} Stocks)`}
           </span>
         </div>
         <h1 className="text-2xl font-black text-white">
-          {lang === 'ar' ? 'مسح وتصفية جميع أسهم البورصة المصرية وفق معايير التداول المتأرجح' : 'Scan & Screen All EGX Equities'}
+          {lang === 'ar'
+            ? 'مسح وتصفية أسهم البورصة المصرية وفق الأرقام الحسابية الحقيقية'
+            : 'Scan & Screen All EGX Equities'}
         </h1>
       </div>
 
       {/* Filter Control Bar */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
           {/* Search box */}
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -114,6 +133,24 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
             </select>
           </div>
 
+          {/* 7-Class Screener Category filter */}
+          <div>
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-emerald-500 cursor-pointer transition-colors"
+            >
+              <option value="ALL">{lang === 'ar' ? 'كافة التصنيفات الفنية' : 'All Screener Categories'}</option>
+              <option value="EARLY_LAUNCH_CANDIDATE">مرشح لانطلاقة مبكرة</option>
+              <option value="NEAR_BREAKOUT">قريب من الاختراق</option>
+              <option value="CONFIRMED_BREAKOUT">اختراق مؤكد</option>
+              <option value="CONTINUING_UPTREND">اتجاه صاعد مستمر</option>
+              <option value="WATCHLIST">سهم يحتاج مراقبة</option>
+              <option value="WEAK_OR_HIGH_RISK">سهم ضعيف أو عالي المخاطر</option>
+              <option value="INSUFFICIENT_DATA">بيانات غير كافية</option>
+            </select>
+          </div>
+
           {/* Recommendation filter */}
           <div>
             <select
@@ -121,11 +158,13 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
               onChange={(e) => setSelectedRec(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-emerald-500 cursor-pointer transition-colors"
             >
-              <option value="ALL">{lang === 'ar' ? 'كافة التوصيات' : 'All Recommendations'}</option>
+              <option value="ALL">{lang === 'ar' ? 'كافة الحالات' : 'All Recommendations'}</option>
               <option value="STRONG_BUY">شراء قوي (STRONG BUY)</option>
               <option value="BUY">شراء (BUY)</option>
               <option value="HOLD">احتفاظ (HOLD)</option>
               <option value="WAIT">ترقب (WAIT)</option>
+              <option value="REDUCE">تخفيف (REDUCE)</option>
+              <option value="INSUFFICIENT_DATA">بيانات غير كافية</option>
             </select>
           </div>
 
@@ -205,7 +244,7 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
                 <th className="py-3 px-3 font-mono-numbers">{lang === 'ar' ? 'مكرر P/E' : 'P/E'}</th>
                 <th className="py-3 px-3 font-mono-numbers">{lang === 'ar' ? 'RSI (14)' : 'RSI'}</th>
                 <th className="py-3 px-3 font-mono-numbers">{lang === 'ar' ? 'التقييم' : 'Score'}</th>
-                <th className="py-3 px-4">{lang === 'ar' ? 'قرار الذكاء الاصطناعي' : 'Recommendation'}</th>
+                <th className="py-3 px-4">{lang === 'ar' ? 'القرار والسبب الحسابي' : 'Decision & Formula'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono-numbers">
@@ -218,6 +257,7 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
               ) : (
                 displayed.map((stock) => {
                   const unit = stock.currency === 'USD' ? '$' : 'جم';
+                  const hasUpside = stock.fairValueUpsidePct !== null;
                   return (
                     <tr
                       key={stock.ticker}
@@ -225,9 +265,16 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
                       className="hover:bg-slate-800/60 cursor-pointer transition-colors group"
                     >
                       <td className="py-3 px-4">
-                        <span className="font-bold text-white text-sm group-hover:text-emerald-400 transition-colors block">
-                          {stock.ticker}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-white text-sm group-hover:text-emerald-400 transition-colors">
+                            {stock.ticker}
+                          </span>
+                          {stock.priceDate && (stock.isStaleQuote || !stock.isLiveQuote) && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                              {stock.priceDate}
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[11px] text-slate-400 font-sans block">{stock.nameAr}</span>
                       </td>
 
@@ -237,7 +284,7 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
                       </td>
 
                       <td className="py-3 px-3 font-bold text-white text-sm">
-                        {stock.currentPrice} {unit}
+                        {stock.currentPrice > 0 ? `${stock.currentPrice} ${unit}` : 'غير متاح'}
                       </td>
 
                       <td className={`py-3 px-3 font-bold ${stock.changePct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -245,37 +292,75 @@ export const ScreenerView: React.FC<ScreenerViewProps> = ({
                       </td>
 
                       <td className="py-3 px-3 font-bold text-slate-200">
-                        {stock.fairValue} {unit}
+                        {stock.fairValue !== null ? `${stock.fairValue} ${unit}` : '—'}
                       </td>
 
-                      <td className={`py-3 px-3 font-bold ${stock.fairValueUpsidePct >= 0 ? 'text-cyan-400' : 'text-rose-400'}`}>
-                        {stock.fairValueUpsidePct >= 0 ? `+${stock.fairValueUpsidePct}%` : `${stock.fairValueUpsidePct}%`}
+                      <td
+                        className={`py-3 px-3 font-bold ${
+                          !hasUpside
+                            ? 'text-slate-500'
+                            : (stock.fairValueUpsidePct ?? 0) >= 0
+                            ? 'text-cyan-400'
+                            : 'text-rose-400'
+                        }`}
+                      >
+                        {hasUpside
+                          ? (stock.fairValueUpsidePct as number) >= 0
+                            ? `+${stock.fairValueUpsidePct}%`
+                            : `${stock.fairValueUpsidePct}%`
+                          : '—'}
                       </td>
 
                       <td className="py-3 px-3 text-slate-300">
-                        {stock.peRatio}x
+                        {stock.peRatio !== null ? `${stock.peRatio}x` : '—'}
                       </td>
 
                       <td className="py-3 px-3 text-purple-300">
-                        {stock.rsi14}
+                        {stock.rsi14 !== null ? stock.rsi14 : '—'}
                       </td>
 
                       <td className="py-3 px-3">
-                        <span className="font-bold text-white px-2 py-0.5 rounded bg-slate-800">
-                          {stock.quickScore}/100
+                        <span className="font-bold text-white px-2 py-0.5 rounded bg-slate-800 block w-fit">
+                          {stock.quickScore !== null ? `${stock.quickScore}/100` : '—'}
                         </span>
+                        {typeof stock.confidencePct === 'number' && stock.confidencePct > 0 && (
+                          <span className="text-[10px] text-cyan-400 block mt-0.5">
+                            ثقة {stock.confidencePct}%
+                          </span>
+                        )}
                       </td>
 
-                      <td className="py-3 px-4">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                          stock.recommendationBadge === 'STRONG_BUY'
-                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                            : stock.recommendationBadge === 'BUY'
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                            : 'bg-slate-800 text-slate-300 border-slate-700'
-                        }`}>
-                          {stock.recommendationBadgeAr}
-                        </span>
+                      <td className="py-3 px-4 font-sans">
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold border inline-block ${
+                              stock.recommendationBadge === 'STRONG_BUY'
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : stock.recommendationBadge === 'BUY'
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                : stock.recommendationBadge === 'REDUCE'
+                                ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+                                : stock.recommendationBadge === 'INSUFFICIENT_DATA'
+                                ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                                : 'bg-slate-800 text-slate-300 border-slate-700'
+                            }`}
+                          >
+                            {stock.screenerCategoryAr || stock.recommendationBadgeAr}
+                          </span>
+                          {stock.falseBreakoutWarning && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                              اختراق كاذب محتمل
+                            </span>
+                          )}
+                        </div>
+                        {stock.mathReasonAr && (
+                          <span
+                            title={stock.mathReasonAr}
+                            className="block text-[10px] text-slate-400 mt-1 line-clamp-1 max-w-[230px]"
+                          >
+                            {stock.mathReasonAr}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );

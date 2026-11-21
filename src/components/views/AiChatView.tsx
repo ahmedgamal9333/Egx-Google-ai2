@@ -205,8 +205,8 @@ export const AiChatView: React.FC<AiChatViewProps> = ({
               </h1>
               <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
                 {lang === 'ar'
-                  ? 'يتصل مباشرة ببيانات 260+ سهم، المحرك الفني، القيمة العادلة، المحفظة، سجل التوصيات، وبحث جوجل الحي لصياغة إجابات منطقية مدعومة بالأرقام.'
-                  : 'Connected directly to live EGX equities, technical & valuation engines, portfolio holdings, audit history, and live web search.'}
+                  ? `يتصل مباشرة ببيانات ${stocks.length} سهم في البورصة، المحرك الفني، القيمة العادلة، المحفظة، سجل التدقيق الآلي، وبحث جوجل لصياغة إجابات منطقية تفسر الأرقام الفعلية دون اختلاق.`
+                  : `Connected directly to ${stocks.length} EGX equities, technical & valuation engines, portfolio holdings, audit history, and live web search without fabricating metrics.`}
               </p>
             </div>
 
@@ -274,19 +274,48 @@ export const AiChatView: React.FC<AiChatViewProps> = ({
 
           {/* Live Market Snapshot Footer */}
           <div className="pt-4 border-t border-slate-800 text-xs text-slate-400 space-y-1.5 font-mono-numbers">
+            {(marketOverview?.dataStatus?.freshnessStatus === 'FAILED' || marketOverview?.dataStatus?.freshnessStatus === 'STALE') && (
+              <div className={`px-2.5 py-1.5 rounded-lg text-[11px] font-sans mb-2 border ${
+                marketOverview?.dataStatus?.freshnessStatus === 'FAILED'
+                  ? 'bg-rose-950/60 border-rose-500/40 text-rose-200'
+                  : 'bg-amber-950/50 border-amber-500/40 text-amber-200'
+              }`}>
+                {marketOverview?.dataStatus?.freshnessStatus === 'FAILED'
+                  ? 'تنبيه: مصدر الأسعار الحية منقطع حالياً'
+                  : `بيانات غير لحظية (جلسة ${marketOverview?.lastMarketSessionDate || 'غير محددة'})`}
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <span className="font-sans">{lang === 'ar' ? 'جلسة السوق:' : 'Session:'}</span>
               <span className="text-slate-200">{marketOverview?.lastMarketSessionDate || '—'}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="font-sans">EGX30:</span>
-              <span className={(marketOverview?.egx30?.changePct ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                {marketOverview?.egx30?.value?.toLocaleString() ?? '—'} ({marketOverview?.egx30?.changePct ?? 0}%)
+              <span
+                className={
+                  typeof marketOverview?.egx30?.changePct !== 'number'
+                    ? 'text-slate-400'
+                    : marketOverview.egx30.changePct >= 0
+                    ? 'text-emerald-400'
+                    : 'text-rose-400'
+                }
+              >
+                {typeof marketOverview?.egx30?.value === 'number'
+                  ? `${marketOverview.egx30.value.toLocaleString()} (${
+                      typeof marketOverview.egx30.changePct === 'number'
+                        ? `${marketOverview.egx30.changePct >= 0 ? '+' : ''}${marketOverview.egx30.changePct}%`
+                        : '—'
+                    })`
+                  : 'غير متاح'}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="font-sans">{lang === 'ar' ? 'سعر الصرف USD/EGP:' : 'USD/EGP:'}</span>
-              <span className="text-slate-200">{marketOverview?.cbeData?.fxUsdEgpRate ?? '—'}</span>
+              <span className="text-slate-200">
+                {typeof marketOverview?.cbeData?.fxUsdEgpRate === 'number'
+                  ? `${marketOverview.cbeData.fxUsdEgpRate} جم`
+                  : 'غير متاح'}
+              </span>
             </div>
           </div>
         </aside>
@@ -521,7 +550,7 @@ export const AiChatView: React.FC<AiChatViewProps> = ({
               >
                 {stocks.map(s => (
                   <option key={s.ticker} value={s.ticker}>
-                    {s.ticker} - {s.nameAr} ({s.currentPrice})
+                    {s.ticker} - {s.nameAr} ({s.currentPrice} {s.currency === 'USD' ? '$' : 'جم'})
                   </option>
                 ))}
               </select>

@@ -15,7 +15,50 @@ import { SettingsView } from './components/views/SettingsView';
 import { AiChatView } from './components/views/AiChatView';
 
 import { EGXStockSummary, DetailedStockPayload, SmartAlert, ChatMessage } from './types';
-import { Bell, X } from 'lucide-react';
+import { Bell, X, AlertTriangle, Clock, RefreshCw } from 'lucide-react';
+import { safeFetchJson } from './utils/apiClient';
+
+class ViewErrorBoundary extends React.Component<
+  { children: React.ReactNode; lang: 'ar' | 'en'; resetKey: string },
+  { hasError: boolean; message: string }
+> {
+  constructor(props: { children: React.ReactNode; lang: 'ar' | 'en'; resetKey: string }) {
+    super(props);
+    this.state = { hasError: false, message: '' };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, message: error?.message || 'Unexpected error' };
+  }
+
+  componentDidUpdate(prevProps: { resetKey: string }) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false, message: '' });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="bg-slate-900 border border-rose-500/40 rounded-2xl p-6 text-center space-y-3 my-6 max-w-xl mx-auto">
+          <AlertTriangle className="w-8 h-8 text-rose-400 mx-auto" />
+          <h3 className="text-base font-bold text-white">
+            {this.props.lang === 'ar' ? 'حدث خطأ أثناء عرض هذه الصفحة' : 'Unable to render this section'}
+          </h3>
+          <p className="text-xs text-slate-400">{this.state.message}</p>
+          <button
+            type="button"
+            onClick={() => this.setState({ hasError: false, message: '' })}
+            className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white"
+          >
+            {this.props.lang === 'ar' ? 'إعادة المحاولة' : 'Retry'}
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export function App() {
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
@@ -37,7 +80,10 @@ export function App() {
   const [alerts, setAlerts] = useState<SmartAlert[]>([]);
   const [loadingStock, setLoadingStock] = useState(false);
   const [stockError, setStockError] = useState<string | null>(null);
+  const [bundleError, setBundleError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [retryingSync, setRetryingSync] = useState(false);
 
   // Sync dir attribute with language
   useEffect(() => {
@@ -45,82 +91,113 @@ export function App() {
     document.documentElement.lang = lang;
   }, [lang]);
 
-  const fetchMarketBundle = () => {
-    return Promise.all([
-      fetch('/api/stocks').then(res => res.json()),
-      fetch('/api/market/overview').then(res => res.json()),
-      fetch('/api/portfolio').then(res => res.json()),
-      fetch('/api/alerts').then(res => res.json())
-    ])
-      .then(([stocksData, marketData, portData, alertsData]) => {
-        setStocks(stocksData);
-        setMarketOverview(marketData);
-        setPortfolio(portData);
-        setAlerts(alertsData);
-        setInitialLoading(false);
-      })
-      .catch(err => {
-        console.error("Failed to fetch initial data:", err);
-        setInitialLoading(false);
-      });
+  const fetchMarketBundle = async () => {
+    setBundleError(null);
+    try {
+      const [stocksData, marketData, portData, alertsData] = await Promise.all([
+        safeFetchJson<EGXStockSummary[]>('/api/stocks', undefined, lang),
+        safeFetchJson<any>('/api/market/overview', undefined, lang),
+        safeFetchJson<any>('/api/portfolio', undefined, lang),
+        safeFetchJson<SmartAlert[]>('/api/alerts', undefined, lang)
+      ]);
+      setStocks(Array.isArray(stocksData) ? stocksData : []);
+      setMarketOverview(marketData);
+      setPortfolio(portData);
+      setAlerts(Array.isArray(alertsData) ? alertsData : []);
+      setInitialLoading(false);
+    } catch (err: any) {
+      console.error('Failed to fetch initial data:', err);
+      setBundleError(
+        err?.message ||
+          (lang === 'ar' ? 'تعذر تحميل بيانات السوق من الخادم' : 'Failed to load market data from server')
+      );
+      setInitialLoading(false);
+    }
   };
 
-  // Initial data loading
   useEffect(() => {
     fetchMarketBundle();
   }, []);
 
-  const loadStockDetails = (ticker: string) => {
-    setLoadingStock(true);
-    setStockError(null);
-    fetch(`/api/stocks/${ticker}`)
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-        return res.json();
-      })
-      .then(data => {
-        setDetailedStock(data);
-        setLoadingStock(false);
-      })
-      .catch(err => {
-        console.error("Failed to load stock details:", err);
-        setStockError(err.message || "Failed to load stock");
-        setLoadingStock(false);
-      });
+  const handleRetryGlobalSync = async () => {
+    setRetryingSync(true);
+    setActionError(null);
+    try {
+      await safeFetchJson('/api/market/sync', { method: 'POST' }, lang);
+      await fetchMarketBundle();
+      if (selectedTicker) {
+        loadStockDetails(selectedTicker);
+      }
+    } catch (err: any) {
+      console.error('Retry sync failed:', err);
+      setActionError(err?.message || (lang === 'ar' ? 'تعذر إعادة مزامنة المصادر' : 'Failed to retry sync'));
+    } finally {
+      setRetryingSync(false);
+    }
   };
 
-  // Fetch detailed stock bundle when selectedTicker changes
+  const loadStockDetails = async (ticker: string) => {
+    setLoadingStock(true);
+    setStockError(null);
+    try {
+      const data = await safeFetchJson<DetailedStockPayload>(`/api/stocks/${encodeURIComponent(ticker)}`, undefined, lang);
+      setDetailedStock(data);
+    } catch (err: any) {
+      console.error('Failed to load stock details:', err);
+      setStockError(err?.message || (lang === 'ar' ? 'تعذر تحميل بيانات السهم' : 'Failed to load stock details'));
+    } finally {
+      setLoadingStock(false);
+    }
+  };
+
   useEffect(() => {
     if (!selectedTicker) return;
     loadStockDetails(selectedTicker);
   }, [selectedTicker]);
 
   const handleSelectStock = (ticker: string) => {
+    if (!ticker || ticker === 'EGX') return;
     setSelectedTicker(ticker);
     setActiveTab('ANALYSIS');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleAddTransaction = (t: string, shares: number, buyPrice: number) => {
-    fetch('/api/portfolio/add', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker: t, shares, buyPrice })
-    })
-      .then(res => res.json())
-      .then(d => setPortfolio(d))
-      .catch(console.error);
+  const handleAddTransaction = async (t: string, shares: number, buyPrice: number) => {
+    setActionError(null);
+    try {
+      const d = await safeFetchJson(
+        '/api/portfolio/add',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ticker: t, shares, buyPrice })
+        },
+        lang
+      );
+      setPortfolio(d);
+    } catch (err: any) {
+      console.error('Add transaction failed:', err);
+      setActionError(err?.message || (lang === 'ar' ? 'تعذر إضافة العملية للمحفظة' : 'Failed to add portfolio transaction'));
+    }
   };
 
-  const handleRemoveTransaction = (t: string) => {
-    fetch('/api/portfolio/remove', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker: t })
-    })
-      .then(res => res.json())
-      .then(d => setPortfolio(d))
-      .catch(console.error);
+  const handleRemoveTransaction = async (t: string) => {
+    setActionError(null);
+    try {
+      const d = await safeFetchJson(
+        '/api/portfolio/remove',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ticker: t })
+        },
+        lang
+      );
+      setPortfolio(d);
+    } catch (err: any) {
+      console.error('Remove transaction failed:', err);
+      setActionError(err?.message || (lang === 'ar' ? 'تعذر حذف السهم من المحفظة' : 'Failed to remove position'));
+    }
   };
 
   const unreadAlertsCount = alerts.filter(a => !a.isRead).length;
@@ -147,22 +224,21 @@ export function App() {
     setChatLoading(true);
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          history: historyPayload,
-          activeTicker: focusTicker || selectedTicker,
-          activeTab,
-          lang
-        })
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || `HTTP ${response.status}`);
-      }
+      const data = await safeFetchJson<any>(
+        '/api/chat',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            history: historyPayload,
+            activeTicker: focusTicker || selectedTicker,
+            activeTab,
+            lang
+          })
+        },
+        lang
+      );
 
       const modelMsg: ChatMessage = {
         id: `m-${Date.now()}`,
@@ -194,6 +270,11 @@ export function App() {
       setChatLoading(false);
     }
   };
+
+  const dataStatus = marketOverview?.dataStatus;
+  const priceFeedFailed = dataStatus && dataStatus.hasAttemptedSync && dataStatus.freshnessStatus === 'FAILED';
+  const indicesFailed = dataStatus && dataStatus.hasAttemptedSync && !dataStatus.indicesOnline;
+  const dataIsStale = dataStatus && dataStatus.isStale && dataStatus.freshnessStatus !== 'FAILED';
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950">
@@ -228,6 +309,89 @@ export function App() {
 
         {/* Content Area */}
         <main className="flex-1 p-4 lg:p-6 max-w-7xl mx-auto w-full min-w-0">
+          {/* Global Data Integrity Alert Banner */}
+          {!initialLoading && (priceFeedFailed || indicesFailed || dataIsStale) && (
+            <div
+              className={`mb-5 rounded-xl border px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs ${
+                priceFeedFailed || indicesFailed
+                  ? 'bg-rose-950/60 border-rose-500/40 text-rose-200'
+                  : 'bg-amber-950/50 border-amber-500/40 text-amber-200'
+              }`}
+            >
+              <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                {priceFeedFailed || indicesFailed ? (
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                ) : (
+                  <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                )}
+                <div className="space-y-0.5">
+                  <div className="font-bold">
+                    {priceFeedFailed
+                      ? (lang === 'ar' ? 'تنبيه مصدر الأسعار: تعذر جلب الأسعار المباشرة من TradingView EGX' : 'Price Feed Alert: TradingView EGX Sync Failed')
+                      : indicesFailed
+                      ? (lang === 'ar' ? 'تنبيه المؤشرات: تعذر تحديث مؤشرات السوق أو سعر الصرف' : 'Indices Feed Alert: EGX Indices/FX Sync Failed')
+                      : (lang === 'ar' ? 'تنبيه حداثة البيانات: الأسعار المعروضة ليست محدثة لحظياً' : 'Stale Data Notice')}
+                  </div>
+                  <div className="text-[11px] opacity-90">
+                    {dataStatus?.staleNoticeAr || dataStatus?.lastSyncError || dataStatus?.indicesSyncError || ''}
+                    {dataStatus?.lastSyncedAt && (
+                      <span className="ms-2 font-mono-numbers">
+                        ({lang === 'ar' ? 'تاريخ أحدث بيانات:' : 'Latest timestamp:'} {dataStatus.lastSyncedAt.replace('T', ' ').substring(0, 16)})
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleRetryGlobalSync}
+                disabled={retryingSync}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-white font-bold transition-colors shrink-0 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${retryingSync ? 'animate-spin' : ''}`} />
+                <span>{retryingSync ? (lang === 'ar' ? 'جاري التحديث...' : 'Syncing...') : (lang === 'ar' ? 'إعادة مزامنة المصادر' : 'Retry Sync')}</span>
+              </button>
+            </div>
+          )}
+
+          {/* API Connection / Action Error Banner */}
+          {!initialLoading && (bundleError || actionError) && (
+            <div className="mb-5 rounded-xl border border-rose-500/40 bg-rose-950/60 px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs text-rose-100">
+              <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-bold">
+                    {lang === 'ar' ? 'خطأ في الاتصال بالواجهة البرمجية (API)' : 'API Communication Error'}
+                  </div>
+                  <div className="text-[11px] opacity-90">{bundleError || actionError}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {bundleError && (
+                  <button
+                    type="button"
+                    onClick={fetchMarketBundle}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold transition-colors"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>{lang === 'ar' ? 'إعادة المحاولة' : 'Retry'}</span>
+                  </button>
+                )}
+                {actionError && (
+                  <button
+                    type="button"
+                    onClick={() => setActionError(null)}
+                    className="p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-300"
+                    aria-label="Dismiss"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {initialLoading ? (
             <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3 text-slate-400">
               <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
@@ -236,7 +400,7 @@ export function App() {
               </span>
             </div>
           ) : (
-            <>
+            <ViewErrorBoundary lang={lang} resetKey={`${activeTab}-${selectedTicker}`}>
               {activeTab === 'DASHBOARD' && (
                 <DashboardView
                   stocks={stocks}
@@ -294,8 +458,8 @@ export function App() {
                       <h3 className="text-base font-bold text-white">
                         {lang === 'ar' ? `تعذر تحميل بيانات سهم ${selectedTicker}` : `Failed to load ${selectedTicker}`}
                       </h3>
-                      <p className="text-xs text-slate-400">
-                        {lang === 'ar' ? 'حدث تأخير في الاستجابة أو انقطاع اتصال مؤقت. يرجى إعادة المحاولة.' : 'Temporary response delay. Please retry.'}
+                      <p className="text-xs text-rose-200 leading-relaxed">
+                        {stockError || (lang === 'ar' ? 'حدث تأخير في الاستجابة أو انقطاع اتصال مؤقت. يرجى إعادة المحاولة.' : 'Temporary response delay. Please retry.')}
                       </p>
                       <button
                         onClick={() => loadStockDetails(selectedTicker)}
@@ -378,7 +542,7 @@ export function App() {
                   onToggleLang={() => setLang(l => (l === 'ar' ? 'en' : 'ar'))}
                 />
               )}
-            </>
+            </ViewErrorBoundary>
           )}
         </main>
       </div>
@@ -404,24 +568,43 @@ export function App() {
               </div>
 
               <div className="space-y-3 overflow-y-auto max-h-[75vh] pr-1">
-                {alerts.map((a) => (
-                  <div
-                    key={a.id}
-                    onClick={() => {
-                      handleSelectStock(a.ticker);
-                      setIsAlertsOpen(false);
-                    }}
-                    className="bg-slate-950 p-4 rounded-xl border border-slate-800 hover:border-slate-700 cursor-pointer transition-all space-y-1.5"
-                  >
-                    <div className="flex items-center justify-between text-xs font-mono-numbers">
-                      <span className="font-bold text-emerald-400">{a.ticker} - {a.typeAr}</span>
-                      <span className="text-[10px] text-slate-500">{a.timestamp}</span>
-                    </div>
-                    <p className="text-xs text-slate-300 leading-relaxed">
-                      {a.messageAr}
-                    </p>
+                {alerts.length === 0 ? (
+                  <div className="text-xs text-slate-400 text-center py-8">
+                    {lang === 'ar' ? 'لا توجد تنبيهات نشطة حالياً.' : 'No active alerts.'}
                   </div>
-                ))}
+                ) : (
+                  alerts.map((a) => {
+                    const isStockTicker = a.ticker !== 'EGX' && a.ticker !== 'SYSTEM';
+                    return (
+                    <div
+                      key={a.id}
+                      onClick={() => {
+                        if (isStockTicker) {
+                          handleSelectStock(a.ticker);
+                          setIsAlertsOpen(false);
+                        }
+                      }}
+                      className={`bg-slate-950 p-4 rounded-xl border transition-all space-y-1.5 ${
+                        a.severity === 'DANGER'
+                          ? 'border-rose-500/40'
+                          : a.severity === 'WARNING'
+                          ? 'border-amber-500/40'
+                          : 'border-slate-800 hover:border-slate-700'
+                      } ${isStockTicker ? 'cursor-pointer' : ''}`}
+                    >
+                      <div className="flex items-center justify-between text-xs font-mono-numbers">
+                        <span className={`font-bold ${a.severity === 'DANGER' ? 'text-rose-400' : a.severity === 'WARNING' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                          {a.ticker} - {a.typeAr}
+                        </span>
+                        <span className="text-[10px] text-slate-500">{a.timestamp}</span>
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        {a.messageAr}
+                      </p>
+                    </div>
+                    );
+                  })
+                )}
               </div>
             </div>
 
@@ -464,4 +647,3 @@ export function App() {
 }
 
 export default App;
-

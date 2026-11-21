@@ -1,3 +1,7 @@
+import { getEGXStock } from '../data/egxStocks';
+import { MarketDataService } from './marketDataService';
+import type { Candle } from './technicalAnalysisService';
+
 export interface HistoricalRecommendation {
   id: string;
   ticker: string;
@@ -9,16 +13,15 @@ export interface HistoricalRecommendation {
   target1: number;
   target2: number;
   target3: number;
-  fairValue: number;
   score: number;
-  confidence: number;
-  recommendationType: 'STRONG_BUY' | 'BUY' | 'WAIT';
+  recommendationType: 'STRONG_BUY' | 'BUY';
   recommendationTypeAr: string;
-  status: 'TARGET_2_HIT' | 'TARGET_1_HIT' | 'TARGET_3_HIT' | 'ACTIVE' | 'STOPPED_OUT';
+  status: 'TARGET_2_HIT' | 'TARGET_1_HIT' | 'ACTIVE' | 'STOPPED_OUT';
   statusAr: string;
   actualReturnPct: number;
   holdingDays: number;
   closedDate?: string;
+  rationaleAr: string;
   sourcesUsed: string[];
 }
 
@@ -26,6 +29,7 @@ export interface RecommendationAuditMetrics {
   totalRecommendations: number;
   winningTrades: number;
   losingTrades: number;
+  activeTrades: number;
   winRatePct: number;
   averageReturnPct: number;
   averageWinningTradePct: number;
@@ -38,228 +42,269 @@ export interface RecommendationAuditMetrics {
   avgHoldingDays: number;
 }
 
-export class RecommendationHistoryService {
-  private static HISTORY: HistoricalRecommendation[] = [
-    {
-      id: "rec-01",
-      ticker: "COMI",
-      companyNameAr: "البنك التجاري الدولي",
-      recommendationDate: "2026-10-06",
-      priceAtRecommendation: 110.50,
-      entryZone: "109.50 - 111.50",
-      stopLoss: 104.50,
-      target1: 118.00,
-      target2: 125.00,
-      target3: 132.00,
-      fairValue: 148.50,
-      score: 94,
-      confidence: 96,
-      recommendationType: "STRONG_BUY",
-      recommendationTypeAr: "شراء قوي",
-      status: "TARGET_2_HIT",
-      statusAr: "تم تحقيق المستهدف الثاني بنجاح",
-      actualReturnPct: 14.5,
-      holdingDays: 24,
-      closedDate: "2026-10-30",
-      sourcesUsed: ["EGX", "Yahoo Finance", "Mubasher"]
-    },
-    {
-      id: "rec-02",
-      ticker: "TMGH",
-      companyNameAr: "مجموعة طلعت مصطفى القابضة",
-      recommendationDate: "2026-09-18",
-      priceAtRecommendation: 71.80,
-      entryZone: "70.50 - 72.50",
-      stopLoss: 67.20,
-      target1: 78.00,
-      target2: 83.50,
-      target3: 92.00,
-      fairValue: 108.00,
-      score: 91,
-      confidence: 93,
-      recommendationType: "STRONG_BUY",
-      recommendationTypeAr: "شراء قوي",
-      status: "TARGET_2_HIT",
-      statusAr: "تم تحقيق المستهدف الثاني بنجاح",
-      actualReturnPct: 16.8,
-      holdingDays: 19,
-      closedDate: "2026-10-07",
-      sourcesUsed: ["EGX", "Mubasher", "Enterprise"]
-    },
-    {
-      id: "rec-03",
-      ticker: "SWDY",
-      companyNameAr: "السويدي إليكتريك",
-      recommendationDate: "2026-10-12",
-      priceAtRecommendation: 98.40,
-      entryZone: "97.50 - 99.20",
-      stopLoss: 93.50,
-      target1: 106.00,
-      target2: 114.00,
-      target3: 122.00,
-      fairValue: 138.00,
-      score: 92,
-      confidence: 94,
-      recommendationType: "BUY",
-      recommendationTypeAr: "شراء",
-      status: "TARGET_2_HIT",
-      statusAr: "تم تحقيق المستهدف الثاني بنجاح",
-      actualReturnPct: 16.1,
-      holdingDays: 21,
-      closedDate: "2026-11-02",
-      sourcesUsed: ["EGX", "Yahoo Finance", "DirectFN"]
-    },
-    {
-      id: "rec-04",
-      ticker: "MFPC",
-      companyNameAr: "مصر لإنتاج الأسمدة - موبكو",
-      recommendationDate: "2026-10-20",
-      priceAtRecommendation: 34.80,
-      entryZone: "34.20 - 35.40",
-      stopLoss: 32.80,
-      target1: 37.50,
-      target2: 39.50,
-      target3: 42.00,
-      fairValue: 48.00,
-      score: 87,
-      confidence: 89,
-      recommendationType: "BUY",
-      recommendationTypeAr: "شراء",
-      status: "TARGET_2_HIT",
-      statusAr: "تم تحقيق المستهدف الثاني بنجاح",
-      actualReturnPct: 13.2,
-      holdingDays: 14,
-      closedDate: "2026-11-03",
-      sourcesUsed: ["EGX", "Mubasher"]
-    },
-    {
-      id: "rec-05",
-      ticker: "ETEL",
-      companyNameAr: "المصرية للاتصالات",
-      recommendationDate: "2026-10-25",
-      priceAtRecommendation: 122.50,
-      entryZone: "121.00 - 123.50",
-      stopLoss: 116.00,
-      target1: 129.00,
-      target2: 135.00,
-      target3: 145.00,
-      fairValue: 155.00,
-      score: 85,
-      confidence: 88,
-      recommendationType: "BUY",
-      recommendationTypeAr: "شراء",
-      status: "ACTIVE",
-      statusAr: "الصفقة نشطة وقيد المتابعة",
-      actualReturnPct: 6.9,
-      holdingDays: 14,
-      sourcesUsed: ["EGX", "Yahoo Finance", "Enterprise"]
-    },
-    {
-      id: "rec-06",
-      ticker: "ISPH",
-      companyNameAr: "ابن سينا فارما",
-      recommendationDate: "2026-09-10",
-      priceAtRecommendation: 4.45,
-      entryZone: "4.40 - 4.52",
-      stopLoss: 4.22,
-      target1: 4.85,
-      target2: 5.15,
-      target3: 5.60,
-      fairValue: 6.20,
-      score: 80,
-      confidence: 85,
-      recommendationType: "BUY",
-      recommendationTypeAr: "شراء",
-      status: "TARGET_2_HIT",
-      statusAr: "تم تحقيق المستهدف الثاني بنجاح",
-      actualReturnPct: 15.7,
-      holdingDays: 28,
-      closedDate: "2026-10-08",
-      sourcesUsed: ["EGX", "Mubasher"]
-    },
-    {
-      id: "rec-07",
-      ticker: "EGAL",
-      companyNameAr: "مصر للألومنيوم",
-      recommendationDate: "2026-08-15",
-      priceAtRecommendation: 272.00,
-      entryZone: "268.00 - 275.00",
-      stopLoss: 256.00,
-      target1: 294.00,
-      target2: 312.00,
-      target3: 335.00,
-      fairValue: 368.00,
-      score: 88,
-      confidence: 91,
-      recommendationType: "STRONG_BUY",
-      recommendationTypeAr: "شراء قوي",
-      status: "TARGET_2_HIT",
-      statusAr: "تم تحقيق المستهدف الثاني بنجاح",
-      actualReturnPct: 14.7,
-      holdingDays: 32,
-      closedDate: "2026-09-16",
-      sourcesUsed: ["EGX", "TradingView", "Mubasher"]
-    },
-    {
-      id: "rec-08",
-      ticker: "GBCO",
-      companyNameAr: "جي بي كورب (غبور أوتو)",
-      recommendationDate: "2026-09-02",
-      priceAtRecommendation: 21.80,
-      entryZone: "21.40 - 22.10",
-      stopLoss: 20.60,
-      target1: 23.50,
-      target2: 24.90,
-      target3: 26.80,
-      fairValue: 28.50,
-      score: 76,
-      confidence: 82,
-      recommendationType: "BUY",
-      recommendationTypeAr: "شراء",
-      status: "STOPPED_OUT",
-      statusAr: "تم تفعيل وقف الخسارة لحماية رأس المال",
-      actualReturnPct: -4.9,
-      holdingDays: 9,
-      closedDate: "2026-09-11",
-      sourcesUsed: ["EGX", "Mubasher"]
-    }
-  ];
+export interface VerifiedAuditResponse {
+  available: boolean;
+  insufficientReasonAr?: string;
+  isWalkForwardAudit: boolean;
+  auditMethodAr: string;
+  lastVerifiedAt: string;
+  history: HistoricalRecommendation[];
+  metrics: RecommendationAuditMetrics | null;
+}
 
-  public static getHistory(): HistoricalRecommendation[] {
-    return this.HISTORY;
+function calcEma(values: number[], period: number): number[] {
+  const k = 2 / (period + 1);
+  const out: number[] = [];
+  let ema = values[0] ?? 0;
+  for (let i = 0; i < values.length; i++) {
+    ema = i === 0 ? values[0] : values[i] * k + ema * (1 - k);
+    out.push(ema);
   }
+  return out;
+}
 
-  public static getMetrics(): RecommendationAuditMetrics {
-    const list = this.HISTORY;
-    const wins = list.filter(r => r.actualReturnPct > 0);
-    const losses = list.filter(r => r.actualReturnPct < 0);
+function calcRsi(closes: number[], period = 14): number[] {
+  const rsi = new Array(closes.length).fill(50);
+  if (closes.length <= period) return rsi;
+  let gains = 0;
+  let losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d >= 0) gains += d;
+    else losses -= d;
+  }
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  rsi[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d >= 0) {
+      avgGain = (avgGain * (period - 1) + d) / period;
+      avgLoss = (avgLoss * (period - 1)) / period;
+    } else {
+      avgGain = (avgGain * (period - 1)) / period;
+      avgLoss = (avgLoss * (period - 1) - d) / period;
+    }
+    rsi[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
+  return rsi;
+}
 
-    const totalWinsGain = wins.reduce((acc, r) => acc + r.actualReturnPct, 0);
-    const totalLossesDrop = Math.abs(losses.reduce((acc, r) => acc + r.actualReturnPct, 0));
+function calcAtr(candles: Candle[], period = 14): number[] {
+  const atr = new Array(candles.length).fill(0);
+  const tr: number[] = [0];
+  for (let i = 1; i < candles.length; i++) {
+    const c = candles[i];
+    const p = candles[i - 1];
+    tr.push(Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close)));
+  }
+  for (let i = period; i < candles.length; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += tr[j];
+    atr[i] = sum / period;
+  }
+  return atr;
+}
 
-    const winRate = Number(((wins.length / list.length) * 100).toFixed(1));
-    const avgWin = wins.length > 0 ? Number((totalWinsGain / wins.length).toFixed(1)) : 0;
-    const avgLoss = losses.length > 0 ? Number((totalLossesDrop / losses.length).toFixed(1)) : 0;
-    const profitFactor = totalLossesDrop > 0 ? Number((totalWinsGain / totalLossesDrop).toFixed(2)) : 5.4;
+const AUDIT_TICKERS = ['COMI', 'TMGH', 'SWDY', 'ETEL', 'MFPC', 'HRHO'];
+let cachedAudit: { data: VerifiedAuditResponse; fetchedAtMs: number } | null = null;
+const AUDIT_CACHE_TTL_MS = 10 * 60 * 1000;
 
-    const t1Hits = list.filter(r => r.status === 'TARGET_1_HIT' || r.status === 'TARGET_2_HIT' || r.status === 'TARGET_3_HIT').length;
-    const t2Hits = list.filter(r => r.status === 'TARGET_2_HIT' || r.status === 'TARGET_3_HIT').length;
-    const stops = list.filter(r => r.status === 'STOPPED_OUT').length;
+export class RecommendationHistoryService {
+  public static async getVerifiedAudit(): Promise<VerifiedAuditResponse> {
+    if (cachedAudit && Date.now() - cachedAudit.fetchedAtMs < AUDIT_CACHE_TTL_MS) {
+      return cachedAudit.data;
+    }
 
-    return {
-      totalRecommendations: list.length,
-      winningTrades: wins.length,
-      losingTrades: losses.length,
-      winRatePct: winRate,
-      averageReturnPct: Number(((list.reduce((acc, r) => acc + r.actualReturnPct, 0)) / list.length).toFixed(1)),
-      averageWinningTradePct: avgWin,
-      averageLosingTradePct: avgLoss,
-      profitFactor,
-      target1HitRatePct: Number(((t1Hits / list.length) * 100).toFixed(1)),
-      target2HitRatePct: Number(((t2Hits / list.length) * 100).toFixed(1)),
-      stopLossRatePct: Number(((stops / list.length) * 100).toFixed(1)),
-      maxDrawdownPct: 4.9,
-      avgHoldingDays: 20
+    const candleResults = await Promise.all(
+      AUDIT_TICKERS.map(async (ticker) => ({
+        ticker,
+        res: await MarketDataService.fetchRealHistoricalCandles(ticker, '1D')
+      }))
+    );
+
+    const validSeries = candleResults.filter((r) => r.res.isRealData && r.res.candles.length >= 60);
+
+    if (validSeries.length === 0) {
+      return {
+        available: false,
+        insufficientReasonAr:
+          'تعذر جلب الشموع التاريخية الفعلية من Yahoo Finance لإجراء تدقيق التوصيات الآلي؛ تم الامتناع عن عرض نسب نجاح تقديرية.',
+        isWalkForwardAudit: true,
+        auditMethodAr: 'تدقيق تاريخي آلي (Walk-Forward) على الشموع الفعلية',
+        lastVerifiedAt: new Date().toISOString(),
+        history: [],
+        metrics: null
+      };
+    }
+
+    const history: HistoricalRecommendation[] = [];
+    let idSeq = 1;
+
+    for (const { ticker, res } of validSeries) {
+      const candles = res.candles;
+      const stock = getEGXStock(ticker);
+      const closes = candles.map((c) => c.close);
+      const ema20 = calcEma(closes, 20);
+      const ema50 = calcEma(closes, 50);
+      const rsi = calcRsi(closes, 14);
+      const atr = calcAtr(candles, 14);
+
+      // Scan last 180 trading days sequentially with zero lookahead
+      const startScan = Math.max(50, candles.length - 160);
+      let cooldownUntil = -1;
+
+      for (let i = startScan; i < candles.length - 1; i++) {
+        if (i <= cooldownUntil) continue;
+
+        const bar = candles[i];
+        const prevVols = candles.slice(i - 20, i).map((c) => c.volume);
+        const avgVol = prevVols.reduce((a, b) => a + b, 0) / Math.max(1, prevVols.length);
+        const rvol = avgVol > 0 ? bar.volume / avgVol : 1;
+
+        const isBuySignal =
+          bar.close > ema20[i] &&
+          ema20[i] >= ema50[i] &&
+          rsi[i] >= 48 &&
+          rsi[i] <= 66 &&
+          rvol >= 1.15 &&
+          bar.close > bar.open;
+
+        if (!isBuySignal) continue;
+
+        const curAtr = atr[i] > 0 ? atr[i] : bar.close * 0.025;
+        const entry = Number(bar.close.toFixed(2));
+        const stopLoss = Number(Math.max(0.05, entry - curAtr * 1.8).toFixed(2));
+        const target1 = Number((entry + curAtr * 1.8).toFixed(2));
+        const target2 = Number((entry + curAtr * 3.0).toFixed(2));
+        const target3 = Number((entry + curAtr * 4.5).toFixed(2));
+
+        let status: HistoricalRecommendation['status'] = 'ACTIVE';
+        let statusAr = 'صفقة مفتوحة حتى أحدث شمعة فعلية';
+        let exitPrice = candles[candles.length - 1].close;
+        let closedDate: string | undefined;
+        let holdingDays = candles.length - 1 - i;
+
+        for (let j = i + 1; j < candles.length; j++) {
+          const fut = candles[j];
+          if (fut.low <= stopLoss) {
+            status = 'STOPPED_OUT';
+            statusAr = 'تفعيل وقف الخسارة الفعلي';
+            exitPrice = stopLoss;
+            closedDate = fut.date;
+            holdingDays = j - i;
+            break;
+          }
+          if (fut.high >= target2) {
+            status = 'TARGET_2_HIT';
+            statusAr = 'تحقق المستهدف الثاني على الشموع الفعلية';
+            exitPrice = target2;
+            closedDate = fut.date;
+            holdingDays = j - i;
+            break;
+          }
+          if (fut.high >= target1 && status === 'ACTIVE') {
+            status = 'TARGET_1_HIT';
+            statusAr = 'تحقق المستهدف الأول على الشموع الفعلية';
+            exitPrice = target1;
+            closedDate = fut.date;
+            holdingDays = j - i;
+            break;
+          }
+        }
+
+        const actualReturnPct = Number((((exitPrice - entry) / entry) * 100).toFixed(2));
+        const recType: 'STRONG_BUY' | 'BUY' = rvol >= 1.5 && rsi[i] >= 53 ? 'STRONG_BUY' : 'BUY';
+
+        history.push({
+          id: `wf-${String(idSeq++).padStart(2, '0')}`,
+          ticker,
+          companyNameAr: stock?.nameAr || ticker,
+          recommendationDate: bar.date,
+          priceAtRecommendation: entry,
+          entryZone: `${Number((entry - curAtr * 0.3).toFixed(2))} - ${Number((entry + curAtr * 0.2).toFixed(2))}`,
+          stopLoss,
+          target1,
+          target2,
+          target3,
+          score: recType === 'STRONG_BUY' ? 84 : 74,
+          recommendationType: recType,
+          recommendationTypeAr: recType === 'STRONG_BUY' ? 'شراء قوي' : 'شراء',
+          status,
+          statusAr,
+          actualReturnPct,
+          holdingDays,
+          closedDate,
+          rationaleAr: `تقاطع إيجابي EMA20 (${ema20[i].toFixed(2)}) > EMA50 (${ema50[i].toFixed(2)}) + RSI(${rsi[i].toFixed(1)}) + سيولة ${rvol.toFixed(2)}x`,
+          sourcesUsed: ['Yahoo Finance Historical Candles', 'TradingView Indicators']
+        });
+
+        cooldownUntil = i + Math.max(8, holdingDays + 2);
+      }
+    }
+
+    history.sort((a, b) => b.recommendationDate.localeCompare(a.recommendationDate));
+    const trimmed = history.slice(0, 24);
+
+    if (trimmed.length === 0) {
+      return {
+        available: false,
+        insufficientReasonAr: 'لم تستوفِ أي جلسة خلال الفترة المراجعة شروط الإشارة الفنية المحددة.',
+        isWalkForwardAudit: true,
+        auditMethodAr: 'تدقيق تاريخي آلي (Walk-Forward) على الشموع الفعلية',
+        lastVerifiedAt: new Date().toISOString(),
+        history: [],
+        metrics: null
+      };
+    }
+
+    const closed = trimmed.filter((r) => r.status !== 'ACTIVE');
+    const evalSet = closed.length > 0 ? closed : trimmed;
+    const wins = evalSet.filter((r) => r.actualReturnPct > 0);
+    const losses = evalSet.filter((r) => r.actualReturnPct <= 0);
+    const activeTrades = trimmed.filter((r) => r.status === 'ACTIVE').length;
+
+    const totalWinsGain = wins.reduce((s, r) => s + r.actualReturnPct, 0);
+    const totalLossesDrop = Math.abs(losses.reduce((s, r) => s + r.actualReturnPct, 0));
+
+    const winRatePct = Number(((wins.length / evalSet.length) * 100).toFixed(1));
+    const avgWin = wins.length > 0 ? Number((totalWinsGain / wins.length).toFixed(2)) : 0;
+    const avgLoss = losses.length > 0 ? Number((totalLossesDrop / losses.length).toFixed(2)) : 0;
+    const profitFactor =
+      totalLossesDrop > 0 ? Number((totalWinsGain / totalLossesDrop).toFixed(2)) : wins.length > 0 ? 99 : 0;
+
+    const t1Hits = evalSet.filter((r) => r.status === 'TARGET_1_HIT' || r.status === 'TARGET_2_HIT').length;
+    const t2Hits = evalSet.filter((r) => r.status === 'TARGET_2_HIT').length;
+    const stops = evalSet.filter((r) => r.status === 'STOPPED_OUT').length;
+    const worstLoss = losses.length > 0 ? Math.max(...losses.map((l) => Math.abs(l.actualReturnPct))) : 0;
+    const avgHoldingDays = Math.round(evalSet.reduce((s, r) => s + r.holdingDays, 0) / evalSet.length);
+
+    const response: VerifiedAuditResponse = {
+      available: true,
+      isWalkForwardAudit: true,
+      auditMethodAr:
+        'تدقيق تاريخي آلي قابل للتحقق (Walk-Forward) على الشموع اليومية الفعلية من Yahoo Finance لقياديات EGX30 (دون تعديل أو بيانات مختلقة)',
+      lastVerifiedAt: new Date().toISOString(),
+      history: trimmed,
+      metrics: {
+        totalRecommendations: trimmed.length,
+        winningTrades: wins.length,
+        losingTrades: losses.length,
+        activeTrades,
+        winRatePct,
+        averageReturnPct: Number((evalSet.reduce((s, r) => s + r.actualReturnPct, 0) / evalSet.length).toFixed(2)),
+        averageWinningTradePct: avgWin,
+        averageLosingTradePct: avgLoss,
+        profitFactor,
+        target1HitRatePct: Number(((t1Hits / evalSet.length) * 100).toFixed(1)),
+        target2HitRatePct: Number(((t2Hits / evalSet.length) * 100).toFixed(1)),
+        stopLossRatePct: Number(((stops / evalSet.length) * 100).toFixed(1)),
+        maxDrawdownPct: Number(worstLoss.toFixed(1)),
+        avgHoldingDays
+      }
     };
+
+    cachedAudit = { data: response, fetchedAtMs: Date.now() };
+    return response;
   }
 }

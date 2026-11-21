@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import { AlertTriangle, RefreshCw, ExternalLink } from 'lucide-react';
 
 export interface TradingViewWidgetProps {
@@ -22,29 +22,39 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({
   hideSideToolbar = false,
   onFallbackRequested
 }) => {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const rawId = useId();
+  const widgetId = useMemo(() => `tv-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`, [rawId]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [reloadNonce, setReloadNonce] = useState(0);
 
   const studiesKey = studies.join('|');
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
     setStatus('loading');
-    container.innerHTML = '';
 
-    const widgetWrapper = document.createElement('div');
-    widgetWrapper.className = 'tradingview-widget-container__widget';
-    widgetWrapper.style.width = '100%';
-    widgetWrapper.style.height = '100%';
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (!data || data.widgetId !== widgetId) return;
+      if (data.type === 'tv-widget-ready') {
+        setStatus('ready');
+      } else if (data.type === 'tv-widget-error') {
+        setStatus('error');
+      }
+    };
 
-    const script = document.createElement('script');
-    script.type = 'text/javascript';
-    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
-    script.async = true;
+    window.addEventListener('message', handleMessage);
 
+    const timeoutId = window.setTimeout(() => {
+      setStatus((prev) => (prev === 'loading' ? 'error' : prev));
+    }, 9500);
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      window.clearTimeout(timeoutId);
+    };
+  }, [widgetId, symbol, interval, lang, studiesKey, allowSymbolChange, hideSideToolbar, reloadNonce]);
+
+  const srcDoc = useMemo(() => {
     const config = {
       autosize: true,
       symbol,
@@ -68,53 +78,78 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({
       support_host: 'https://www.tradingview.com'
     };
 
-    script.innerHTML = JSON.stringify(config);
+    const safeConfigJson = JSON.stringify(config).replace(/</g, '\\u003c');
+    const safeWidgetId = JSON.stringify(widgetId);
 
-    let settled = false;
-    const observer = new MutationObserver(() => {
-      if (container.querySelector('iframe')) {
-        settled = true;
-        setStatus('ready');
-        observer.disconnect();
+    return `<!doctype html>
+<html lang="${lang === 'ar' ? 'ar' : 'en'}">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html, body, .tradingview-widget-container, .tradingview-widget-container__widget {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #090d16;
       }
-    });
-    observer.observe(container, { childList: true, subtree: true });
-
-    script.onload = () => {
-      setTimeout(() => {
-        if (container.querySelector('iframe')) {
-          settled = true;
-          setStatus('ready');
-        }
-      }, 400);
-    };
-
-    script.onerror = () => {
-      if (!settled) {
-        settled = true;
-        setStatus('error');
-      }
-      observer.disconnect();
-    };
-
-    const timeoutId = window.setTimeout(() => {
-      if (!settled && !container.querySelector('iframe')) {
-        setStatus('error');
-        observer.disconnect();
-      }
-    }, 9000);
-
-    container.appendChild(widgetWrapper);
-    container.appendChild(script);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-      observer.disconnect();
-      if (container) {
-        container.innerHTML = '';
-      }
-    };
-  }, [symbol, interval, lang, studiesKey, allowSymbolChange, hideSideToolbar, reloadNonce]);
+    </style>
+    <script>
+      window.onerror = function() { return true; };
+      window.addEventListener('unhandledrejection', function(e) {
+        if (e && e.preventDefault) e.preventDefault();
+      });
+    </script>
+  </head>
+  <body>
+    <div id="tv-root" class="tradingview-widget-container">
+      <div class="tradingview-widget-container__widget"></div>
+      <script>
+        (function() {
+          var id = ${safeWidgetId};
+          var root = document.getElementById('tv-root');
+          var settled = false;
+          function notify(type) {
+            if (settled) return;
+            settled = true;
+            try {
+              window.parent.postMessage({ type: type, widgetId: id }, '*');
+            } catch (e) {}
+          }
+          var observer = new MutationObserver(function() {
+            if (root && root.querySelector('iframe')) {
+              notify('tv-widget-ready');
+              observer.disconnect();
+            }
+          });
+          if (root) {
+            observer.observe(root, { childList: true, subtree: true });
+          }
+          window.__tvScriptError = function() {
+            observer.disconnect();
+            notify('tv-widget-error');
+          };
+          window.__tvScriptLoad = function() {
+            setTimeout(function() {
+              if (root && root.querySelector('iframe')) {
+                notify('tv-widget-ready');
+              }
+            }, 400);
+          };
+        })();
+      </script>
+      <script
+        type="text/javascript"
+        src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js"
+        async
+        onload="window.__tvScriptLoad && window.__tvScriptLoad()"
+        onerror="window.__tvScriptError && window.__tvScriptError()"
+      >${safeConfigJson}</script>
+    </div>
+  </body>
+</html>`;
+  }, [widgetId, symbol, interval, lang, studiesKey, allowSymbolChange, hideSideToolbar]);
 
   return (
     <div
@@ -122,9 +157,12 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({
       style={{ height: `${height}px` }}
       dir="ltr"
     >
-      <div
-        ref={containerRef}
-        className="tradingview-widget-container w-full h-full"
+      <iframe
+        key={`${widgetId}-${symbol}-${interval}-${lang}-${studiesKey}-${reloadNonce}`}
+        title={`TradingView Chart ${symbol}`}
+        srcDoc={srcDoc}
+        sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+        className="w-full h-full border-0 block"
       />
 
       {status === 'loading' && (

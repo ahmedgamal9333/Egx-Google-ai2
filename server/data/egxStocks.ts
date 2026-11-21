@@ -1,3 +1,5 @@
+export type QuoteType = 'LIVE_INTRADAY' | 'LAST_COMPLETED_SESSION' | 'REFERENCE_SNAPSHOT';
+
 export interface EGXStock {
   ticker: string;
   tvTicker?: string;
@@ -26,10 +28,79 @@ export interface EGXStock {
   irUrl: string;
   descriptionAr: string;
   establishedYear: number;
+  // Explicit price separation (Live vs Last Completed Session vs Static Reference Snapshot)
+  quoteType?: QuoteType;
+  livePrice?: number | null;
+  lastCompletedSessionClose?: number | null;
+  lastCompletedSessionDate?: string | null;
+  referenceSnapshotPrice?: number;
+  referenceSnapshotDate?: string;
+  sourceTimestamp?: string | null;
+  receivedAt?: string | null;
+  anomalyFlags?: string[];
+  // TradingView fundamental & technical fields
   tvPeRatio?: number | null;
   tvPbRatio?: number | null;
   tvDividendYield?: number | null;
+  tvDividendPayoutRatio?: number | null;
   tvRsi?: number | null;
+  tvRoe?: number | null;
+  tvRoa?: number | null;
+  tvDebtToEquity?: number | null;
+  tvNetMargin?: number | null;
+  tvOperatingMargin?: number | null;
+  tvGrossMargin?: number | null;
+  tvTotalRevenue?: number | null;
+  tvNetIncome?: number | null;
+  tvNetIncomeTtm?: number | null;
+  tvTotalDebt?: number | null;
+  tvTotalAssets?: number | null;
+  tvFreeCashFlow?: number | null;
+  tvOperatingCashFlow?: number | null;
+  tvEps?: number | null;
+  tvLastAnnualEps?: number | null;
+  tvRevenueGrowthYoy?: number | null;
+  tvEpsGrowthYoy?: number | null;
+  tvBookValue?: number | null;
+  tvBvps?: number | null;
+  tvCurrentRatio?: number | null;
+  tvQuickRatio?: number | null;
+  tvMarketCap?: number | null;
+  tvFiscalPeriodEndDate?: string | null;
+  tvEarningsReleaseDate?: string | null;
+  tvNextEarningsDate?: string | null;
+  tvHigh52W?: number | null;
+  tvLow52W?: number | null;
+  tvHigh1M?: number | null;
+  tvLow1M?: number | null;
+  tvHigh3M?: number | null;
+  tvLow3M?: number | null;
+  tvEma10?: number | null;
+  tvEma20?: number | null;
+  tvEma50?: number | null;
+  tvEma200?: number | null;
+  tvSma20?: number | null;
+  tvSma50?: number | null;
+  tvBbUpper?: number | null;
+  tvBbLower?: number | null;
+  tvMacd?: number | null;
+  tvMacdSignal?: number | null;
+  tvAtr?: number | null;
+  tvAtr14?: number | null;
+  tvAdx?: number | null;
+  tvAdxPlusDI?: number | null;
+  tvAdxMinusDI?: number | null;
+  tvMom?: number | null;
+  tvRecommendAll?: number | null;
+  tvRvol?: number | null;
+  tvRelVol?: number | null;
+  tvAvgVol10d?: number | null;
+  tvAvgVol30d?: number | null;
+  priceDate?: string | null;
+  dataSource?: 'TRADINGVIEW_LIVE' | 'REFERENCE_SNAPSHOT';
+  syncedFromLive?: boolean;
+  isLiveQuote?: boolean;
+  isStaleQuote?: boolean;
   lastSyncedAt?: string;
 }
 

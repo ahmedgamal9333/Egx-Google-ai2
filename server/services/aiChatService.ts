@@ -40,7 +40,7 @@ const TOOL_LABELS_AR: Record<string, string> = {
   get_sector_statistics: 'إحصائيات وأداء القطاعات',
   get_portfolio_summary: 'بيانات المحفظة الاستثمارية',
   get_recommendation_history_stats: 'سجل التوصيات وتدقيق الأداء التاريخي',
-  get_news_and_events: 'الأخبار والإفصاحات والأحداث المرتقبة',
+  get_news_and_events: 'الأخبار الحية عبر Google News RSS',
   get_data_sources_and_alerts: 'حالة مصادر البيانات والتنبيهات الذكية',
   run_backtest_summary: 'محرك الاختبار التاريخي للاستراتيجيات',
   google_search: 'بحث جوجل الحي (Web Search)'
@@ -50,7 +50,7 @@ const functionDeclarations: FunctionDeclaration[] = [
   {
     name: 'get_market_overview',
     description:
-      'Fetch live Egyptian Exchange (EGX) market overview: EGX30, EGX70, EGX100 values and % change, total turnover EGP, volume, trades, advancing/declining/unchanged stocks, market breadth ratio, Central Bank of Egypt (CBE) interest rates, inflation, FX USD/EGP rate, foreign reserves, and session status.',
+      'Fetch EGX market overview including live sync status/errors/staleness timestamps, EGX30/EGX70/EGX100 values, turnover, breadth, FX USD/EGP, and dated CBE reference rates.',
     parameters: {
       type: Type.OBJECT,
       properties: {}
@@ -59,7 +59,7 @@ const functionDeclarations: FunctionDeclaration[] = [
   {
     name: 'search_filter_stocks',
     description:
-      'Search, filter, and rank the EGX universe (~260 stocks) using technical, fundamental, valuation, and liquidity metrics. Use this for screeners, top opportunities, highest upside, lowest P/E, oversold/bullish RSI, sector leaders, or finding a stock ticker by Arabic/English name.',
+      'Search, filter, and rank EGX stocks using live-synced TradingView metrics, real TTM fundamentals, and formula-based fair value. Stocks without sufficient live data carry INSUFFICIENT_DATA.',
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -69,7 +69,7 @@ const functionDeclarations: FunctionDeclaration[] = [
         },
         sector: {
           type: Type.STRING,
-          description: 'Optional Arabic or English sector substring (e.g., البنوك, العقارات, الاتصالات, Banks, Real Estate).'
+          description: 'Optional Arabic or English sector substring.'
         },
         index: {
           type: Type.STRING,
@@ -77,7 +77,11 @@ const functionDeclarations: FunctionDeclaration[] = [
         },
         recommendation: {
           type: Type.STRING,
-          description: 'Optional recommendation badge: STRONG_BUY, BUY, HOLD, WAIT, or REDUCE.'
+          description: 'Optional recommendation badge: STRONG_BUY, BUY, HOLD, WAIT, REDUCE, INSUFFICIENT_DATA.'
+        },
+        screenerCategory: {
+          type: Type.STRING,
+          description: 'Optional screener category: EARLY_LAUNCH_CANDIDATE, NEAR_BREAKOUT, CONFIRMED_BREAKOUT, CONTINUING_UPTREND, WATCHLIST, WEAK_OR_HIGH_RISK, INSUFFICIENT_DATA.'
         },
         dailyTrend: {
           type: Type.STRING,
@@ -86,6 +90,10 @@ const functionDeclarations: FunctionDeclaration[] = [
         minScore: {
           type: Type.NUMBER,
           description: 'Minimum quick overall score (0-100).'
+        },
+        minTurnoverEgp: {
+          type: Type.NUMBER,
+          description: 'Minimum daily value traded in EGP.'
         },
         maxPe: {
           type: Type.NUMBER,
@@ -105,7 +113,7 @@ const functionDeclarations: FunctionDeclaration[] = [
         },
         sortBy: {
           type: Type.STRING,
-          description: 'Sort field: score, fairValueUpsidePct, changePct, valueTraded, peRatio, dividendYield, rsi14.'
+          description: 'Sort field: score, confidencePct, fairValueUpsidePct, changePct, valueTraded, peRatio, dividendYield, rsi14.'
         },
         sortOrder: {
           type: Type.STRING,
@@ -121,13 +129,13 @@ const functionDeclarations: FunctionDeclaration[] = [
   {
     name: 'get_full_stock_analysis',
     description:
-      'Run a complete deep-dive analysis for a specific EGX stock ticker: live TradingView snapshot, historical candles summary, full technical indicators (EMAs, RSI, MACD, ADX, ATR, Bollinger, Pivot Points, Support & Resistance zones, Fibonacci), 4-year financials & ratios, DCF/P/E/DDM/NAV fair value valuation, AI Swing Trading plan (entry zones, stop loss, T1/T2/T3, R:R, risk gates, bullish/bearish/neutral scenarios), and disclosures.',
+      'Run verified deep-dive analysis for a specific EGX stock ticker: live TradingView snapshot, real Yahoo Finance historical candles (>=30 bars required), technical indicators, TradingView TTM financials, formula fair value, mathematical trading plan, and RSS news. Returns INSUFFICIENT_DATA if real candles or live quote data are lacking.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         ticker: {
           type: Type.STRING,
-          description: 'EGX stock ticker symbol such as COMI, TMGH, SWDY, ETEL, MFPC, FWRY, HRHO, EFID.'
+          description: 'EGX stock ticker symbol such as COMI, TMGH, SWDY, ETEL, MFPC, FWRY.'
         }
       },
       required: ['ticker']
@@ -136,7 +144,7 @@ const functionDeclarations: FunctionDeclaration[] = [
   {
     name: 'compare_stocks',
     description:
-      'Compare 2 to 5 EGX stocks side by side across price, daily change, P/E, P/B, ROE, dividend yield, fair value upside, RSI, daily trend, support/resistance, and quick score.',
+      'Compare 2 to 5 EGX stocks side by side using real synced quotes, verified Yahoo candles, mathematical scores, and explicit availability flags.',
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -152,7 +160,7 @@ const functionDeclarations: FunctionDeclaration[] = [
   {
     name: 'get_sector_statistics',
     description:
-      'Get aggregated statistics across all EGX sectors: stock count, advancing vs declining count, total turnover, average change %, average P/E, average fair value upside, and top 3 scoring stocks per sector.',
+      'Get aggregated statistics across EGX sectors from live-synced stocks, ignoring null/unavailable metrics.',
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -166,7 +174,7 @@ const functionDeclarations: FunctionDeclaration[] = [
   {
     name: 'get_portfolio_summary',
     description:
-      'Get the user current investment portfolio on the platform: total cost, total market value, unrealized P&L, cash balance, total equity, dividends earned, and every holding with shares, avg buy price, current price, weight %, fair value upside, and AI action (HOLD/ADD/REDUCE/EXIT).',
+      'Get the current user portfolio summary valued at real prices with mathematical fair-value-based action logic.',
     parameters: {
       type: Type.OBJECT,
       properties: {}
@@ -175,7 +183,7 @@ const functionDeclarations: FunctionDeclaration[] = [
   {
     name: 'get_recommendation_history_stats',
     description:
-      'Get historical recommendation audit metrics (win rate %, profit factor, average return %, average winning/losing trade %, T1/T2 hit rate, max drawdown) and the list of past and active tracked recommendations.',
+      'Get genuine tracked recommendation history and performance metrics recorded during live platform operation.',
     parameters: {
       type: Type.OBJECT,
       properties: {}
@@ -184,13 +192,13 @@ const functionDeclarations: FunctionDeclaration[] = [
   {
     name: 'get_news_and_events',
     description:
-      'Get official EGX/Mubasher/Enterprise news disclosures and upcoming corporate events (AGM, dividends, earnings). Optionally filter by stock ticker.',
+      'Fetch live EGX or stock-specific headlines from Google News Arabic RSS with feed status and timestamps.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         ticker: {
           type: Type.STRING,
-          description: 'Optional stock ticker to filter news and upcoming events.'
+          description: 'Optional stock ticker to filter news.'
         }
       }
     }
@@ -198,7 +206,7 @@ const functionDeclarations: FunctionDeclaration[] = [
   {
     name: 'get_data_sources_and_alerts',
     description:
-      'Get platform data source intelligence report (health score, connected feeds like TradingView/EGX/Mubasher/Yahoo/CBE, latency, discrepancy logs) plus the user watchlist and smart alerts.',
+      'Get real data source health report (TradingView EGX, TradingView Indices, Yahoo Finance, Google News RSS, CBE Static Reference, Gemini AI), errors, timestamps, discrepancy logs, and alerts.',
     parameters: {
       type: Type.OBJECT,
       properties: {}
@@ -207,7 +215,7 @@ const functionDeclarations: FunctionDeclaration[] = [
   {
     name: 'run_backtest_summary',
     description:
-      'Run the platform historical strategy backtesting engine for a strategy and stock ticker to evaluate historical return %, alpha vs EGX30, win rate, profit factor, Sharpe ratio, and max drawdown.',
+      'Run walk-forward historical strategy backtest on real Yahoo Finance OHLCV candles (>=60 trading bars required). Returns INSUFFICIENT_DATA if real history is unavailable.',
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -238,14 +246,31 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
     case 'get_market_overview': {
       const overview = MarketDataService.getMarketOverview();
       const { stocksList } = getCachedStockBatches();
-      const strongBuys = stocksList.filter(s => s.recommendationBadge === 'STRONG_BUY').length;
-      const buys = stocksList.filter(s => s.recommendationBadge === 'BUY').length;
-      const topGainers = [...stocksList].sort((a, b) => b.changePct - a.changePct).slice(0, 5).map(s => ({
-        ticker: s.ticker, nameAr: s.nameAr, price: s.currentPrice, changePct: s.changePct, volume: s.volume
-      }));
-      const topTurnover = [...stocksList].sort((a, b) => b.valueTraded - a.valueTraded).slice(0, 5).map(s => ({
-        ticker: s.ticker, nameAr: s.nameAr, price: s.currentPrice, changePct: s.changePct, valueTradedM: Number((s.valueTraded / 1e6).toFixed(1))
-      }));
+      const strongBuys = stocksList.filter((s) => s.recommendationBadge === 'STRONG_BUY').length;
+      const buys = stocksList.filter((s) => s.recommendationBadge === 'BUY').length;
+      const syncedOnly = stocksList.filter((s) => s.isLiveQuote);
+      const topGainers = [...syncedOnly]
+        .sort((a, b) => b.changePct - a.changePct)
+        .slice(0, 5)
+        .map((s) => ({
+          ticker: s.ticker,
+          nameAr: s.nameAr,
+          price: s.currentPrice,
+          changePct: s.changePct,
+          volume: s.volume,
+          priceDate: s.priceDate
+        }));
+      const topTurnover = [...syncedOnly]
+        .sort((a, b) => b.valueTraded - a.valueTraded)
+        .slice(0, 5)
+        .map((s) => ({
+          ticker: s.ticker,
+          nameAr: s.nameAr,
+          price: s.currentPrice,
+          changePct: s.changePct,
+          valueTradedM: Number((s.valueTraded / 1e6).toFixed(1)),
+          priceDate: s.priceDate
+        }));
       return {
         ...overview,
         strongBuyCount: strongBuys,
@@ -256,62 +281,76 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
     }
 
     case 'search_filter_stocks': {
+      const overview = MarketDataService.getMarketOverview();
       const { screenerList } = getCachedStockBatches();
       let results = [...screenerList];
 
       if (args.query) {
         const q = normalizeText(String(args.query));
-        results = results.filter(s =>
-          normalizeText(s.ticker).includes(q) ||
-          normalizeText(s.nameAr).includes(q) ||
-          normalizeText(s.nameEn || '').includes(q) ||
-          normalizeText(s.sectorAr).includes(q)
+        results = results.filter(
+          (s) =>
+            normalizeText(s.ticker).includes(q) ||
+            normalizeText(s.nameAr).includes(q) ||
+            normalizeText(s.nameEn || '').includes(q) ||
+            normalizeText(s.sectorAr).includes(q)
         );
       }
       if (args.sector) {
         const sec = normalizeText(String(args.sector));
-        results = results.filter(s =>
-          normalizeText(s.sectorAr).includes(sec) || normalizeText(s.sectorEn || '').includes(sec)
+        results = results.filter(
+          (s) => normalizeText(s.sectorAr).includes(sec) || normalizeText(s.sectorEn || '').includes(sec)
         );
       }
       if (args.index && args.index !== 'ALL') {
-        results = results.filter(s => s.index === String(args.index).toUpperCase());
+        results = results.filter((s) => s.index === String(args.index).toUpperCase());
       }
       if (args.recommendation && args.recommendation !== 'ALL') {
-        results = results.filter(s => s.recommendation === String(args.recommendation).toUpperCase());
+        results = results.filter((s) => s.recommendation === String(args.recommendation).toUpperCase());
+      }
+      if (args.screenerCategory && args.screenerCategory !== 'ALL') {
+        results = results.filter((s) => s.screenerCategory === String(args.screenerCategory).toUpperCase());
       }
       if (args.dailyTrend) {
-        results = results.filter(s => s.dailyTrend === String(args.dailyTrend).toUpperCase());
+        results = results.filter((s) => s.dailyTrend === String(args.dailyTrend).toUpperCase());
       }
       if (typeof args.minScore === 'number') {
-        results = results.filter(s => s.score >= args.minScore);
+        results = results.filter((s) => s.score !== null && s.score >= args.minScore);
+      }
+      if (typeof args.minTurnoverEgp === 'number') {
+        results = results.filter((s) => s.valueTraded >= args.minTurnoverEgp);
       }
       if (typeof args.maxPe === 'number') {
-        results = results.filter(s => s.peRatio > 0 && s.peRatio <= args.maxPe);
+        results = results.filter((s) => s.peRatio !== null && s.peRatio > 0 && s.peRatio <= args.maxPe);
       }
       if (typeof args.minUpside === 'number') {
-        results = results.filter(s => s.fairValueUpsidePct >= args.minUpside);
+        results = results.filter((s) => s.fairValueUpsidePct !== null && s.fairValueUpsidePct >= args.minUpside);
       }
       if (typeof args.minRsi === 'number') {
-        results = results.filter(s => s.rsi14 >= args.minRsi);
+        results = results.filter((s) => s.rsi14 !== null && s.rsi14 >= args.minRsi);
       }
       if (typeof args.maxRsi === 'number') {
-        results = results.filter(s => s.rsi14 <= args.maxRsi);
+        results = results.filter((s) => s.rsi14 !== null && s.rsi14 <= args.maxRsi);
       }
 
       const sortField = typeof args.sortBy === 'string' ? args.sortBy : 'score';
       const sortAsc = args.sortOrder === 'asc';
-      results.sort((a, b) => {
-        const va = Number(a[sortField] ?? a.score ?? 0);
-        const vb = Number(b[sortField] ?? b.score ?? 0);
-        return sortAsc ? va - vb : vb - va;
+      results.sort((a: any, b: any) => {
+        const rawA = a[sortField];
+        const rawB = b[sortField];
+        const nullA = rawA === null || rawA === undefined;
+        const nullB = rawB === null || rawB === undefined;
+        if (nullA && nullB) return 0;
+        if (nullA) return 1;
+        if (nullB) return -1;
+        return sortAsc ? Number(rawA) - Number(rawB) : Number(rawB) - Number(rawA);
       });
 
       const limit = Math.min(30, Math.max(1, Number(args.limit) || 15));
       return {
+        dataStatus: overview.dataStatus,
         totalMatched: results.length,
         returned: Math.min(limit, results.length),
-        stocks: results.slice(0, limit).map(s => ({
+        stocks: results.slice(0, limit).map((s) => ({
           ticker: s.ticker,
           nameAr: s.nameAr,
           sectorAr: s.sectorAr,
@@ -320,8 +359,20 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
           changePct: s.changePct,
           valueTradedM: Number((s.valueTraded / 1e6).toFixed(2)),
           score: s.score,
+          confidencePct: s.confidencePct,
+          screenerCategory: s.screenerCategory,
+          screenerCategoryAr: s.screenerCategoryAr,
+          pillarBreakdown: s.pillarBreakdown,
           recommendation: s.recommendation,
           recommendationAr: s.recommendationAr,
+          mathReasonAr: s.mathReasonAr,
+          reasonsAr: s.reasonsAr,
+          risksAr: s.risksAr,
+          invalidationConditionsAr: s.invalidationConditionsAr,
+          supportLevel: s.supportLevel,
+          resistanceLevel: s.resistanceLevel,
+          accumulationDetected: s.accumulationDetected,
+          falseBreakoutWarning: s.falseBreakoutWarning,
           peRatio: s.peRatio,
           pbRatio: s.pbRatio,
           roe: s.roe,
@@ -330,8 +381,10 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
           fairValueUpsidePct: s.fairValueUpsidePct,
           rsi14: s.rsi14,
           dailyTrend: s.dailyTrend,
-          breakoutStatus: s.breakoutStatus,
-          relativeVolume: s.relativeVolume
+          relativeVolume: s.relativeVolume,
+          priceDate: s.priceDate,
+          isLiveQuote: s.isLiveQuote,
+          isStaleQuote: s.isStaleQuote
         }))
       };
     }
@@ -341,20 +394,29 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
       let stock = getEGXStock(rawTicker);
       if (!stock && rawTicker) {
         const q = normalizeText(rawTicker);
-        stock = EGX_STOCKS_UNIVERSE.find(s =>
-          normalizeText(s.nameAr).includes(q) || normalizeText(s.nameEn).includes(q)
+        stock = EGX_STOCKS_UNIVERSE.find(
+          (s) => normalizeText(s.nameAr).includes(q) || normalizeText(s.nameEn).includes(q)
         );
       }
       if (!stock) {
         return { error: `Stock "${args.ticker}" was not found in the EGX universe.` };
       }
 
-      const [dailyRes, tvSnapshot] = await Promise.all([
+      const [dailyRes, tvSnapshot, newsRes] = await Promise.all([
         MarketDataService.fetchRealHistoricalCandles(stock.ticker, '1D'),
-        MarketDataService.fetchTradingViewTechnicalSnapshot(stock.ticker)
+        MarketDataService.fetchTradingViewTechnicalSnapshot(stock.ticker),
+        NewsDisclosureService.fetchNewsForTicker(stock.ticker)
       ]);
 
-      const tech = TechnicalAnalysisEngine.calculate(dailyRes.candles, tvSnapshot, dailyRes.isRealData);
+      const techSafe = TechnicalAnalysisEngine.calculateSafe(dailyRes.candles, tvSnapshot, {
+        isRealData: dailyRes.isRealData,
+        isStale: dailyRes.isStale,
+        staleDays: dailyRes.staleDays,
+        staleReasonAr: dailyRes.staleReasonAr,
+        error: dailyRes.error
+      });
+      const tech = techSafe.result || null;
+
       const fund = FundamentalAnalysisEngine.getFinancials(stock.ticker, stock.currentPrice);
       const fair = FairValueValuationEngine.calculate(
         stock.ticker,
@@ -362,21 +424,28 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
         fund.ratios.peRatio,
         fund.ratios.pbRatio,
         fund.ratios.dividendYield,
-        fund.ratios.roe
+        fund.ratios.roe,
+        fund.ratios.eps,
+        fund.ratios.bookValuePerShare
       );
-      const news = NewsDisclosureService.getNewsForTicker(stock.ticker);
-      const upcomingEvents = NewsDisclosureService.getUpcomingEvents(stock.ticker);
-      const aiDecision = await AiRecommendationEngine.analyze(stock, tech, fund, fair, news, { generateFreshAi: false });
 
-      const peers = EGX_STOCKS_UNIVERSE
-        .filter(s => s.sectorAr === stock!.sectorAr && s.ticker !== stock!.ticker)
+      const multiSource = MarketDataService.compareMultiSources(stock.ticker, tvSnapshot, dailyRes);
+      const aiDecision = await AiRecommendationEngine.analyze(stock, tech, fund, fair, newsRes.news, {
+        generateFreshAi: false,
+        techErrorAr: techSafe.reasonAr,
+        discrepancyNoticeAr: multiSource.notesAr
+      });
+
+      const peers = EGX_STOCKS_UNIVERSE.filter((s) => s.sectorAr === stock!.sectorAr && s.ticker !== stock!.ticker)
         .slice(0, 4)
-        .map(p => {
+        .map((p) => {
           const pFund = FundamentalAnalysisEngine.getFinancials(p.ticker, p.currentPrice);
           return {
             ticker: p.ticker,
             nameAr: p.nameAr,
             currentPrice: p.currentPrice,
+            isLiveQuote: !!p.isLiveQuote,
+            priceDate: p.priceDate || null,
             peRatio: pFund.ratios.peRatio,
             pbRatio: pFund.ratios.pbRatio,
             roe: pFund.ratios.roe
@@ -384,6 +453,20 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
         });
 
       return {
+        dataProvenance: {
+          priceDate: stock.priceDate || null,
+          lastSyncedAt: stock.lastSyncedAt || null,
+          isLiveQuote: !!stock.isLiveQuote,
+          yahooIsRealData: dailyRes.isRealData,
+          yahooLastCandleDate: dailyRes.lastCandleDate,
+          yahooIsStale: dailyRes.isStale,
+          yahooStaleDays: dailyRes.staleDays,
+          yahooStaleReasonAr: dailyRes.staleReasonAr,
+          yahooError: dailyRes.error,
+          newsOnline: newsRes.sourceOnline,
+          newsError: newsRes.error,
+          multiSourceComparison: multiSource
+        },
         stock: {
           ticker: stock.ticker,
           yahooTicker: stock.yahooTicker,
@@ -396,99 +479,150 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
           currency: stock.currency,
           currentPrice: stock.currentPrice,
           prevClose: stock.prevClose,
-          changePct: tech.changePct,
           volume: stock.volume,
           valueTradedM: Number((stock.valueTraded / 1e6).toFixed(2)),
-          marketCapBillionEgp: Number(((stock.listedShares * stock.currentPrice) / 1000).toFixed(2))
+          marketCapEgp: fund.ratios.marketCapEgp
         },
-        technical: {
-          technicalScore: tech.technicalScore,
-          dailyTrend: tech.dailyTrend,
-          weeklyTrend: tech.weeklyTrend,
-          monthlyTrend: tech.monthlyTrend,
-          trendAlignmentStatusAr: tech.trendAlignmentStatusAr,
-          rsi14: tech.rsi14,
-          rsiStatus: tech.rsiStatus,
-          macd: tech.macd,
-          adx14: tech.adx14,
-          stochastic: tech.stochastic,
-          ema9: tech.ema9,
-          ema20: tech.ema20,
-          ema50: tech.ema50,
-          ema200: tech.ema200,
-          atr14: tech.atr14,
-          relativeVolume: tech.relativeVolume,
-          breakoutStatus: tech.breakoutStatus,
-          patternsDetected: tech.patternsDetected,
-          supportZones: tech.supportZones,
-          resistanceZones: tech.resistanceZones,
-          fibonacciLevels: tech.fibonacciLevels,
-          pivotPoints: tech.pivotPoints,
-          lastCandlesAnalysis: tech.lastCandlesAnalysis
-        },
+        technical: tech
+          ? {
+              available: true,
+              candlesCount: tech.candlesCount,
+              lastCandleDate: tech.lastCandleDate,
+              isStale: tech.isStale,
+              staleReasonAr: tech.staleReasonAr,
+              technicalScore: tech.technicalScore,
+              technicalScoreFormulaAr: tech.technicalScoreFormulaAr,
+              technicalScoreBreakdown: tech.technicalScoreBreakdown,
+              dailyTrend: tech.dailyTrend,
+              weeklyTrend: tech.weeklyTrend,
+              monthlyTrend: tech.monthlyTrend,
+              trendAlignmentStatusAr: tech.trendAlignmentStatusAr,
+              rsi14: tech.rsi14,
+              rsiStatus: tech.rsiStatus,
+              macd: tech.macd,
+              adx14: tech.adx14,
+              ema20: tech.ema20,
+              ema50: tech.ema50,
+              ema200: tech.ema200,
+              atr14: tech.atr14,
+              relativeVolume: tech.relativeVolume,
+              supportZones: tech.supportZones,
+              resistanceZones: tech.resistanceZones,
+              volatilityContraction: tech.volatilityContraction || null,
+              falseBreakoutDetected: !!tech.falseBreakoutDetected,
+              falseBreakoutNoteAr: tech.falseBreakoutNoteAr || null,
+              lastCandlesAnalysis: tech.lastCandlesAnalysis
+            }
+          : {
+              available: false,
+              reasonAr: techSafe.reasonAr || 'لا تتوفر شموع تاريخية كافية لإجراء التحليل الفني.'
+            },
         fundamental: {
+          available: fund.available,
+          insufficientReasonAr: fund.insufficientReasonAr,
+          sectorProfile: fund.sectorProfile,
+          sectorProfileAr: fund.sectorProfileAr,
+          fundamentalConfidence: fund.fundamentalConfidence,
+          availableMetricsCount: fund.availableMetricsCount,
+          dataCompletenessPct: fund.dataCompletenessPct,
           reportingPeriod: fund.reportingPeriod,
-          auditorName: fund.auditorName,
-          ratios: fund.ratios,
-          latestYears: fund.historicalYears.slice(-2)
+          fiscalPeriodEndDate: fund.fiscalPeriodEndDate,
+          earningsReleaseDate: fund.earningsReleaseDate,
+          publishedMetrics: fund.publishedMetrics,
+          derivedMetrics: fund.derivedMetrics,
+          unavailableMetrics: fund.unavailableMetrics,
+          qualityScoreFormulaAr: fund.qualityScoreFormulaAr,
+          qualityScoreComponents: fund.qualityScoreComponents,
+          ratios: fund.ratios
         },
         fairValue: {
+          available: fair.available,
+          insufficientReasonAr: fair.insufficientReasonAr,
+          valuationDate: fair.valuationDate,
           estimatedFairValue: fair.estimatedFairValue,
           conservativeValuation: fair.conservativeValuation,
           optimisticValuation: fair.optimisticValuation,
           upsideDownsidePct: fair.upsideDownsidePct,
           valuationStatusAr: fair.valuationStatusAr,
+          formulaExplanationAr: fair.formulaExplanationAr,
           methods: fair.methods,
-          dcfAssumptions: fair.dcfAssumptions
+          modelInputs: fair.modelInputs
         },
         tradingPlan: {
+          available: aiDecision.available,
+          insufficientReasonAr: aiDecision.insufficientReasonAr,
+          isStaleData: aiDecision.isStaleData,
+          dataDate: aiDecision.dataDate,
           recommendation: aiDecision.recommendation,
           recommendationAr: aiDecision.recommendationAr,
           overallScore: aiDecision.overallScore,
           confidenceScore: aiDecision.confidenceScore,
-          scoreBreakdown: aiDecision.scoreBreakdown,
+          mathematicalRationaleAr: aiDecision.mathematicalRationaleAr,
+          scoreFormulaAr: aiDecision.scoreFormulaAr,
+          pillars: aiDecision.pillars,
           preferredEntryZone: aiDecision.preferredEntryZone,
           alternativeEntryZone: aiDecision.alternativeEntryZone,
           breakoutTriggerPrice: aiDecision.breakoutTriggerPrice,
+          entryConfirmationAr: aiDecision.entryConfirmationAr,
           stopLossPrice: aiDecision.stopLossPrice,
           stopLossPct: aiDecision.stopLossPct,
           stopLossLogicAr: aiDecision.stopLossLogicAr,
           target1: aiDecision.target1,
           target2: aiDecision.target2,
-          target3: aiDecision.target3,
+          target3: aiDecision.target3 || null,
+          targetNotesAr: aiDecision.targetNotesAr,
+          expectedUpsidePct: aiDecision.expectedUpsidePct,
           rewardRiskRatio: aiDecision.rewardRiskRatio,
+          selectionReasonsAr: aiDecision.selectionReasonsAr,
+          potentialRisksAr: aiDecision.potentialRisksAr,
+          invalidationConditionsAr: aiDecision.invalidationConditionsAr,
           allGatesPassed: aiDecision.allGatesPassed,
-          riskGates: aiDecision.riskGates,
-          bullishScenario: aiDecision.bullishScenario,
-          bearishScenario: aiDecision.bearishScenario,
-          positiveFactorsAr: aiDecision.positiveFactorsAr,
-          negativeFactorsAr: aiDecision.negativeFactorsAr
+          riskGates: aiDecision.riskGates
         },
-        news,
-        upcomingEvents,
+        news: newsRes.news,
         peers
       };
     }
 
     case 'compare_stocks': {
       const tickers: string[] = Array.isArray(args.tickers) ? args.tickers.slice(0, 5) : [];
-      const { stocksList } = getCachedStockBatches();
       const comparisons = [];
 
       for (const raw of tickers) {
         const norm = String(raw).toUpperCase().replace('.CA', '').trim();
-        const summary = stocksList.find(s => s.ticker === norm);
         const stock = getEGXStock(norm);
-        if (!stock || !summary) continue;
+        if (!stock) continue;
 
-        const candles = MarketDataService.getHistoricalCandles(stock.ticker, '1D');
-        const tech = TechnicalAnalysisEngine.calculate(candles);
+        const [dailyRes, tvSnapshot, newsRes] = await Promise.all([
+          MarketDataService.fetchRealHistoricalCandles(stock.ticker, '1D'),
+          MarketDataService.fetchTradingViewTechnicalSnapshot(stock.ticker),
+          NewsDisclosureService.fetchNewsForTicker(stock.ticker)
+        ]);
+
+        const techSafe = TechnicalAnalysisEngine.calculateSafe(dailyRes.candles, tvSnapshot, {
+          isRealData: dailyRes.isRealData,
+          isStale: dailyRes.isStale,
+          staleDays: dailyRes.staleDays,
+          staleReasonAr: dailyRes.staleReasonAr,
+          error: dailyRes.error
+        });
+        const tech = techSafe.result || null;
         const fund = FundamentalAnalysisEngine.getFinancials(stock.ticker, stock.currentPrice);
         const fair = FairValueValuationEngine.calculate(
-          stock.ticker, stock.currentPrice, fund.ratios.peRatio, fund.ratios.pbRatio, fund.ratios.dividendYield, fund.ratios.roe
+          stock.ticker,
+          stock.currentPrice,
+          fund.ratios.peRatio,
+          fund.ratios.pbRatio,
+          fund.ratios.dividendYield,
+          fund.ratios.roe,
+          fund.ratios.eps,
+          fund.ratios.bookValuePerShare
         );
-        const news = NewsDisclosureService.getNewsForTicker(stock.ticker);
-        const plan = await AiRecommendationEngine.analyze(stock, tech, fund, fair, news, { generateFreshAi: false });
+        const plan = await AiRecommendationEngine.analyze(stock, tech, fund, fair, newsRes.news, {
+          generateFreshAi: false,
+          techErrorAr: techSafe.reasonAr,
+          recordHistory: false
+        });
 
         comparisons.push({
           ticker: stock.ticker,
@@ -496,9 +630,11 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
           sectorAr: stock.sectorAr,
           index: stock.index,
           price: stock.currentPrice,
-          changePct: summary.changePct,
-          valueTradedM: Number((stock.valueTraded / 1e6).toFixed(2)),
-          marketCapBillion: Number(((stock.listedShares * stock.currentPrice) / 1000).toFixed(2)),
+          priceDate: stock.priceDate || null,
+          isLiveQuote: !!stock.isLiveQuote,
+          lastCandleDate: dailyRes.lastCandleDate,
+          available: plan.available,
+          insufficientReasonAr: plan.insufficientReasonAr || null,
           peRatio: fund.ratios.peRatio,
           pbRatio: fund.ratios.pbRatio,
           roe: fund.ratios.roe,
@@ -507,17 +643,22 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
           dividendYield: fund.ratios.dividendYield,
           fairValue: fair.estimatedFairValue,
           fairValueUpsidePct: fair.upsideDownsidePct,
-          rsi14: tech.rsi14,
-          dailyTrend: tech.dailyTrend,
-          technicalScore: tech.technicalScore,
+          rsi14: tech?.rsi14 ?? stock.tvRsi ?? null,
+          dailyTrend: tech?.dailyTrend ?? 'UNAVAILABLE',
+          technicalScore: tech?.technicalScore ?? null,
           fundamentalScore: fund.ratios.fundamentalQualityScore,
           overallScore: plan.overallScore,
+          recommendation: plan.recommendation,
           recommendationAr: plan.recommendationAr,
+          mathematicalRationaleAr: plan.mathematicalRationaleAr,
           rewardRiskRatio: plan.rewardRiskRatio,
-          preferredEntry: plan.preferredEntryZone.labelAr,
+          preferredEntry: plan.preferredEntryZone?.labelAr ?? null,
           stopLoss: plan.stopLossPrice,
-          target1: plan.target1.price,
-          target2: plan.target2.price
+          target1: plan.target1?.price ?? null,
+          target2: plan.target2?.price ?? null,
+          target3: plan.target3?.price ?? null,
+          sectorProfileAr: fund.sectorProfileAr,
+          fundamentalConfidence: fund.fundamentalConfidence
         });
       }
 
@@ -525,6 +666,7 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
     }
 
     case 'get_sector_statistics': {
+      const overview = MarketDataService.getMarketOverview();
       const { screenerList } = getCachedStockBatches();
       const sectorMap = new Map<string, any[]>();
       for (const s of screenerList) {
@@ -534,22 +676,47 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
 
       let sectors = Array.from(sectorMap.entries()).map(([sectorAr, items]) => {
         const count = items.length;
-        const advancing = items.filter(i => i.changePct > 0).length;
-        const declining = items.filter(i => i.changePct < 0).length;
-        const avgChangePct = Number((items.reduce((a, b) => a + b.changePct, 0) / count).toFixed(2));
-        const validPe = items.filter(i => i.peRatio > 0 && i.peRatio < 80);
-        const avgPe = validPe.length > 0 ? Number((validPe.reduce((a, b) => a + b.peRatio, 0) / validPe.length).toFixed(1)) : 0;
-        const avgUpside = Number((items.reduce((a, b) => a + b.fairValueUpsidePct, 0) / count).toFixed(1));
-        const avgScore = Number((items.reduce((a, b) => a + b.score, 0) / count).toFixed(1));
-        const totalTurnoverM = Number((items.reduce((a, b) => a + b.valueTraded, 0) / 1e6).toFixed(1));
-        const topStocks = [...items].sort((a, b) => b.score - a.score).slice(0, 3).map(t => ({
-          ticker: t.ticker, nameAr: t.nameAr, price: t.currentPrice, score: t.score, upsidePct: t.fairValueUpsidePct, recommendation: t.recommendation
-        }));
+        const synced = items.filter((i) => i.isLiveQuote);
+        const advancing = synced.filter((i) => i.changePct > 0).length;
+        const declining = synced.filter((i) => i.changePct < 0).length;
+        const avgChangePct =
+          synced.length > 0
+            ? Number((synced.reduce((a, b) => a + b.changePct, 0) / synced.length).toFixed(2))
+            : null;
+        const validPe = items.filter((i) => i.peRatio !== null && i.peRatio > 0 && i.peRatio < 80);
+        const avgPe =
+          validPe.length > 0
+            ? Number((validPe.reduce((a, b) => a + b.peRatio, 0) / validPe.length).toFixed(1))
+            : null;
+        const validUpside = items.filter((i) => i.fairValueUpsidePct !== null);
+        const avgUpside =
+          validUpside.length > 0
+            ? Number((validUpside.reduce((a, b) => a + b.fairValueUpsidePct, 0) / validUpside.length).toFixed(1))
+            : null;
+        const validScores = items.filter((i) => i.score !== null);
+        const avgScore =
+          validScores.length > 0
+            ? Number((validScores.reduce((a, b) => a + b.score, 0) / validScores.length).toFixed(1))
+            : null;
+        const totalTurnoverM = Number((synced.reduce((a, b) => a + b.valueTraded, 0) / 1e6).toFixed(1));
+        const topStocks = [...items]
+          .filter((t) => t.score !== null)
+          .sort((a, b) => (b.score ?? -999) - (a.score ?? -999))
+          .slice(0, 3)
+          .map((t) => ({
+            ticker: t.ticker,
+            nameAr: t.nameAr,
+            price: t.currentPrice,
+            score: t.score,
+            upsidePct: t.fairValueUpsidePct,
+            recommendation: t.recommendation
+          }));
 
         return {
           sectorAr,
           sectorEn: items[0]?.sectorEn || '',
           stockCount: count,
+          syncedCount: synced.length,
           advancing,
           declining,
           avgChangePct,
@@ -563,11 +730,17 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
 
       if (args.sectorFilter) {
         const q = normalizeText(String(args.sectorFilter));
-        sectors = sectors.filter(sec => normalizeText(sec.sectorAr).includes(q) || normalizeText(sec.sectorEn).includes(q));
+        sectors = sectors.filter(
+          (sec) => normalizeText(sec.sectorAr).includes(q) || normalizeText(sec.sectorEn).includes(q)
+        );
       }
 
-      sectors.sort((a, b) => b.avgScore - a.avgScore);
-      return { totalSectors: sectors.length, sectors };
+      sectors.sort((a, b) => (b.avgScore ?? -1) - (a.avgScore ?? -1));
+      return {
+        dataStatus: overview.dataStatus,
+        totalSectors: sectors.length,
+        sectors
+      };
     }
 
     case 'get_portfolio_summary': {
@@ -575,17 +748,18 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
     }
 
     case 'get_recommendation_history_stats': {
-      return {
-        metrics: RecommendationHistoryService.getMetrics(),
-        history: RecommendationHistoryService.getHistory()
-      };
+      return await RecommendationHistoryService.getVerifiedAudit();
     }
 
     case 'get_news_and_events': {
       const ticker = args.ticker ? String(args.ticker).toUpperCase().replace('.CA', '').trim() : undefined;
+      const newsRes = ticker
+        ? await NewsDisclosureService.fetchNewsForTicker(ticker)
+        : await NewsDisclosureService.fetchAllNews();
       return {
-        news: ticker ? NewsDisclosureService.getNewsForTicker(ticker) : NewsDisclosureService.getAllNews(),
-        upcomingEvents: NewsDisclosureService.getUpcomingEvents(ticker)
+        ...newsRes,
+        upcomingEvents: [],
+        upcomingEventsNoteAr: 'لا يتوفر مصدر رسمي مربوط تلقائياً لأجندة الجمعيات العمومية القادمة؛ لا تُصدر مواعيد افتراضية.'
       };
     }
 
@@ -598,7 +772,7 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
     }
 
     case 'run_backtest_summary': {
-      return BacktestingEngine.runBacktest({
+      return await BacktestingEngine.runBacktest({
         strategyId: args.strategyId || 'SWING_TREND_PULLBACK',
         ticker: args.ticker || 'COMI'
       });
@@ -610,7 +784,7 @@ async function executeToolCall(name: string, args: Record<string, any>): Promise
 }
 
 function extractTickersFromText(text: string): string[] {
-  const knownTickers = new Set(EGX_STOCKS_UNIVERSE.map(s => s.ticker));
+  const knownTickers = new Set(EGX_STOCKS_UNIVERSE.map((s) => s.ticker));
   const matches = text.match(/\b[A-Z]{3,6}\b/g) || [];
   const found: string[] = [];
   for (const m of matches) {
@@ -659,20 +833,25 @@ export class AiChatService {
     const activeStock = getEGXStock(activeTicker);
     const overview = MarketDataService.getMarketOverview();
 
-    const systemInstruction = `
-أنت "كبير محللي البورصة المصرية والمستشار الاستثماري الذكي" المدمج داخل منصة EGX AI Analyst.
-تاريخ جلسة السوق الحالية في المنصة: ${overview.lastMarketSessionDate} | حالة السوق: ${overview.marketStatusAr} | EGX30: ${overview.egx30.value} (${overview.egx30.changePct}%) | الدولار/الجنيه: ${overview.cbeData.fxUsdEgpRate} | الفائدة الإقراض/الإيداع: ${overview.cbeData.overnightLendingRate}% / ${overview.cbeData.overnightDepositRate}%.
-السياق الحالي للمستخدم: يتصفح حالياً تبويب (${params.activeTab || 'DASHBOARD'})، والسهم النشط المحدد هو (${activeTicker}${activeStock ? ` - ${activeStock.nameAr} بسعر ${activeStock.currentPrice} ${activeStock.currency}` : ''}).
+    const syncBanner = !overview.dataStatus.tradingViewOnline
+      ? `تنبيه حرج: مصدر الأسعار المباشر متوقف/فاشل حالياً (${overview.dataStatus.lastSyncError || 'لم يكتمل الاتصال بعد'}).`
+      : overview.dataStatus.isStale
+      ? `تنبيه حداثة: آخر مزامنة للأسعار كانت بتاريخ ${overview.dataStatus.lastSyncedAt} (منذ ${overview.dataStatus.dataAgeMinutes} دقيقة).`
+      : `مزامن لحظياً بتاريخ ${overview.dataStatus.lastSyncedAt}.`;
 
-قواعدك الصارمة لتقديم إجابات قوية ومنطقية ومقنعة:
-1. **اعتمد على البيانات الحقيقية للمنصة عبر الأدوات (Function Calling)**: قبل أي تحليل لسهم أو قطاع أو محفظة أو إحصائيات أو ماسح السوق، استدعِ الأداة المناسبة (\`get_full_stock_analysis\`, \`search_filter_stocks\`, \`compare_stocks\`, \`get_market_overview\`, \`get_portfolio_summary\`, \`get_sector_statistics\`, \`get_recommendation_history_stats\`, \`get_news_and_events\`, \`get_data_sources_and_alerts\`, \`run_backtest_summary\`) للحصول على الأرقام الفعلية من المنصة ولا تخمن أو تخترع أي سعر أو نسبة أبداً!
-2. **استخدم بحث جوجل الحي (\`googleSearch\`) عند الحاجة**: إذا سأل المستخدم عن أخبار اقتصادية حديثة، قرارات البنك المركزي المصري الأخيرة، أحداث عالمية، أسعار سلع/ذهب/نفط، أو إفصاحات وتفاصيل شركات حديثة غير موجودة بالكامل في قاعدة المنصة، استخدم البحث الحي وادمج نتائجه مع أرقام المنصة.
-3. **التحليل المنطقي والربط السببي**: لا تسرد أرقاماً صماء فقط؛ اشرح *لماذا* يعني هذا الرقم قراراً معيناً (مثلاً: اربط بين هامش الأمان مقابل القيمة العادلة، مضاعف الربحية P/E مقارنة بالقطاع، زخم RSI وMACD ومناطق الدعم والمقاومة الفعلية، ومعدل العائد للمخاطرة R:R، مع مراعاة بيئة الفائدة وسعر الصرف).
-4. **تنسيق احترافي منظم**:
-   - استخدم لغة عربية مالية رصينة وواضحة (أو الإنجليزية إذا كتب المستخدم بالإنجليزية أو كانت لغة الواجهة الإنجليزية وطلب بالإنجليزية).
-   - نظّم الإجابة بعناوين واضحة، نقاط مركزة، وجداول Markdown عند مقارنة أسهم أو عرض مستويات التداول (الدخول، وقف الخسارة، الأهداف 1/2/3).
-   - اذكر رمز السهم باللغة الإنجليزية (مثل \`COMI\` أو \`TMGH\`) دائماً بوضوح.
-   - اختم عند تقديم خطة تداول أو رأي استثماري بتنويه موجز بأن التداول يخضع لإدارة المخاطر (مثل قاعدة 2% من رأس المال لكل صفقة).
+    const systemInstruction = `
+أنت "كبير محللي البورصة المصرية والمستشار الاستثماري الذكي" في منصة EGX AI Analyst.
+حالة مصادر البيانات الآن: ${syncBanner}
+تاريخ الجلسة: ${overview.lastMarketSessionDate} | EGX30: ${overview.egx30.value ?? 'غير متاح'} | الدولار/الجنيه: ${overview.cbeData.fxUsdEgpRate ?? 'غير متاح'} | الفائدة المرجعية (${overview.cbeData.lastCbeMeetingDate}): ${overview.cbeData.overnightLendingRate}%/${overview.cbeData.overnightDepositRate}%.
+السهم النشط: ${activeTicker}${activeStock ? ` (${activeStock.nameAr} — السعر ${activeStock.currentPrice} ${activeStock.currency}، تاريخه ${activeStock.priceDate || 'غير محدد'})` : ''}.
+
+قواعد النزاهة والمنهجية الصارمة (مخالفتها مرفوضة تماماً):
+1. **دورك التفسير فقط — لا تخترع أسعاراً أو مؤشرات**: استدعِ أدوات المنصة أولاً، واذكر الأرقام والنسب كما وردت حرفياً من الأدوات. يُمنع منعاً باتاً اختراع أي سعر دخول أو وقف خسارة أو مستهدف أو نسبة مالية غير موجودة في مخرجات الأداة.
+2. **تنبيه فشل مصدر الأسعار**: إذا أظهرت الأداة فشل مصدر الأسعار (TradingView أو Yahoo Finance أو News RSS) يجب أن تبدأ بتنبيه المستخدم فوراً بوضوح وذكر سبب الفشل.
+3. **إظهار تاريخ البيانات القديمة/المرجعية**: إذا كانت الشموع أو الأسعار قديمة (isStale) أو من مرجع ثابت مثل فائدة البنك المركزي (${overview.cbeData.lastCbeMeetingDate})، اذكر التاريخ الفعلي صراحةً للمستخدم.
+4. **الامتناع عن إصدار تحليل عند نقص البيانات**: إذا أعادت الأداة \`available: false\` أو \`INSUFFICIENT_DATA\` أو \`status: 'INSUFFICIENT_DATA'\`، امتنع عن إصدار أي توصية شراء/بيع أو أهداف سعرية واشرح ما هي البيانات الناقصة بالضبط.
+5. **السبب الحسابي لكل توصية**: عند شرح أي توصية أو تقييم (سهم أو محفظة)، اعرض المعادلة والأوزان والأرقام الحقيقية (\`mathematicalRationaleAr\` / \`scoreFormulaAr\` / \`formulaExplanationAr\`) التي بُني عليها القرار.
+6. **بحث جوجل الحي (\`googleSearch\`)**: استخدمه فقط للأخبار الاقتصادية الحديثة أو قرارات المركزي أو الإفصاحات المنشورة على الويب، ولا تستخدمه لاختلاق مستويات فنية غير محسوبة.
 `.trim();
 
     const contents: Content[] = [];
@@ -691,13 +870,8 @@ export class AiChatService {
       parts: [{ text: params.message }]
     });
 
-    const toolsWithSearch = [
-      { googleSearch: {} },
-      { functionDeclarations }
-    ];
-    const toolsPlatformOnly = [
-      { functionDeclarations }
-    ];
+    const toolsWithSearch = [{ googleSearch: {} }, { functionDeclarations }];
+    const toolsPlatformOnly = [{ functionDeclarations }];
 
     const usedToolsSet = new Set<string>();
     const webSourcesMap = new Map<string, ChatWebSource>();
@@ -705,44 +879,88 @@ export class AiChatService {
 
     let finalReply = '';
     const maxRounds = 5;
-    let useGoogleSearch = true;
+    // Enable Google Search hybrid mode selectively when query asks about external news/macro/web facts,
+    // keeping standard EGX platform/stock queries fast on dedicated function tools.
+    const needsWebSearch = /(أخبار|خبر|إفصاح|المركزي|فائدة|تضخم|دولار|بحث|جوجل|اليوم|مؤخرا|مؤخراً|آخر|news|macro|cbe|inflation|rate|search|today|latest)/i.test(
+      params.message
+    );
+    let useGoogleSearch = needsWebSearch;
+
+    let activeModel = 'gemini-4-hydrogen';
+    const GEMINI_CALL_TIMEOUT_MS = 30000;
+    const PLAIN_FALLBACK_TIMEOUT_MS = 28000;
+    let lastUpstreamStatus: number | undefined;
+    let lastUpstreamReason = '';
 
     const callModelWithRetry = async () => {
-      try {
-        return await ai.models.generateContent({
-          model: 'gemini-4-hydrogen',
-          contents,
-          config: {
-            systemInstruction,
-            tools: useGoogleSearch ? toolsWithSearch : toolsPlatformOnly,
-            toolConfig: useGoogleSearch ? { includeServerSideToolInvocations: true } : undefined,
-            thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM }
-          }
-        });
-      } catch (err: any) {
-        const msg = String(err?.message || '');
-        const status = err?.status;
-        if (useGoogleSearch && (status === 429 || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('grounding'))) {
-          useGoogleSearch = false;
-          return await ai.models.generateContent({
-            model: 'gemini-4-hydrogen',
+      const delays = [0, 400];
+      for (let attempt = 0; attempt < delays.length; attempt++) {
+        if (delays[attempt] > 0) {
+          await new Promise((r) => setTimeout(r, delays[attempt]));
+        }
+        try {
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => {
+              const tErr: any = new Error('Gemini API call timed out');
+              tErr.status = 504;
+              reject(tErr);
+            }, GEMINI_CALL_TIMEOUT_MS)
+          );
+
+          const callPromise = ai.models.generateContent({
+            model: activeModel,
             contents,
             config: {
               systemInstruction,
-              tools: toolsPlatformOnly,
-              thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM }
+              tools: useGoogleSearch ? toolsWithSearch : toolsPlatformOnly,
+              toolConfig: useGoogleSearch ? { includeServerSideToolInvocations: true } : undefined,
+              thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
             }
           });
+
+          return await Promise.race([callPromise, timeoutPromise]);
+        } catch (err: any) {
+          const msg = String(err?.message || '');
+          const status = err?.status;
+          lastUpstreamStatus = typeof status === 'number' ? status : lastUpstreamStatus;
+          lastUpstreamReason = msg.slice(0, 160);
+          console.warn(`[AiChatService] Gemini tool-call attempt ${attempt} failed (model=${activeModel}, search=${useGoogleSearch}, status=${status}): ${lastUpstreamReason}`);
+
+          // If primary free model hits 429 rate limit, switch once to free-tier high-throughput gemini-3.1-flash-lite
+          if ((status === 429 || msg.includes('RESOURCE_EXHAUSTED')) && activeModel !== 'gemini-3.1-flash-lite') {
+            activeModel = 'gemini-3.1-flash-lite';
+            useGoogleSearch = false;
+            continue;
+          }
+
+          // If combined Google Search grounding + custom tools failed/timed out, retry once with platform tools only
+          if (useGoogleSearch && attempt === 0) {
+            useGoogleSearch = false;
+            continue;
+          }
+
+          // Don't burn another 30s waiting on a full tool timeout — break directly to fast platform-context synthesis
+          if (status === 504 || msg.includes('timed out')) {
+            throw err;
+          }
+
+          const isTransient =
+            status === 503 ||
+            status === 500 ||
+            msg.includes('UNAVAILABLE') ||
+            msg.includes('ECONNRESET');
+          if (!isTransient || attempt === delays.length - 1) {
+            throw err;
+          }
         }
-        throw err;
       }
+      throw new Error('Gemini API retry attempts exhausted');
     };
 
     try {
       for (let round = 0; round < maxRounds; round++) {
         const response = await callModelWithRetry();
 
-        // Collect any grounding web sources
         const groundingMetadata: any = response.candidates?.[0]?.groundingMetadata;
         const groundingChunks = groundingMetadata?.groundingChunks;
         if (Array.isArray(groundingChunks)) {
@@ -750,10 +968,7 @@ export class AiChatService {
             const uri = chunk?.web?.uri;
             const title = chunk?.web?.title;
             if (uri && !webSourcesMap.has(uri)) {
-              webSourcesMap.set(uri, {
-                uri,
-                title: title || uri
-              });
+              webSourcesMap.set(uri, { uri, title: title || uri });
             }
           }
         }
@@ -813,12 +1028,13 @@ export class AiChatService {
       }
     } catch (err: any) {
       const rawMsg = String(err?.message || '');
-      const status = err?.status;
+      const status = err?.status || lastUpstreamStatus;
+
       if (status === 429 || rawMsg.includes('RESOURCE_EXHAUSTED')) {
         const quotaErr: any = new Error(
           lang === 'en'
-            ? 'Gemini API quota exceeded (429). Please check your rate limit or select a billing-enabled API key in Settings > Secrets.'
-            : 'تم تجاوز حد الاستخدام المتاح لمفتاح Gemini API حالياً (429). يمكنك التحقق من الحصة أو اختيار مفتاح مدفوع من لوحة Settings > Secrets.'
+            ? 'Gemini API quota exceeded (429). Please wait a few seconds or select a billing-enabled API key in Settings > Secrets.'
+            : 'تم تجاوز حد الاستخدام المتاح لمفتاح Gemini API حالياً (429). يرجى الانتظار بضع ثوانٍ أو مراجعة المفتاح والحصة في لوحة Settings > Secrets.'
         );
         quotaErr.status = 429;
         throw quotaErr;
@@ -829,10 +1045,139 @@ export class AiChatService {
             ? 'Invalid or unauthorized Gemini API key. Please check your key in Settings > Secrets.'
             : 'مفتاح Gemini API غير صالح أو يفتقر للصلاحيات. يرجى مراجعة المفتاح في لوحة Settings > Secrets.'
         );
-        authErr.status = status || 403;
+        authErr.status = status || 401;
         throw authErr;
       }
-      throw err;
+
+      // If hybrid tool-calling timed out or returned 503, execute verified platform context server-side
+      // and call lightweight Gemini generateContent with ThinkingLevel.LOW.
+      if (status === 503 || status === 504 || rawMsg.includes('UNAVAILABLE') || rawMsg.includes('timed out')) {
+        try {
+          const detectedTickers = extractTickersFromText(params.message.toUpperCase());
+          const focusTicker = detectedTickers[0] || (activeStock ? activeStock.ticker : 'COMI');
+          if (getEGXStock(focusTicker)) mentionedTickersSet.add(focusTicker);
+
+          const [marketCtx, stockCtx, sourcesCtx] = await Promise.all([
+            executeToolCall('get_market_overview', {}),
+            executeToolCall('get_full_stock_analysis', { ticker: focusTicker }),
+            executeToolCall('get_data_sources_and_alerts', {})
+          ]);
+          usedToolsSet.add(TOOL_LABELS_AR.get_market_overview);
+          usedToolsSet.add(TOOL_LABELS_AR.get_full_stock_analysis);
+
+          const compactContext = JSON.stringify({
+            market: {
+              egx30: marketCtx.egx30,
+              egx70: marketCtx.egx70,
+              cbeData: marketCtx.cbeData,
+              dataStatus: marketCtx.dataStatus,
+              topGainers: Array.isArray(marketCtx.topGainers) ? marketCtx.topGainers.slice(0, 3) : [],
+              topTurnover: Array.isArray(marketCtx.topTurnover) ? marketCtx.topTurnover.slice(0, 3) : []
+            },
+            focusStock: {
+              dataProvenance: stockCtx.dataProvenance,
+              stock: stockCtx.stock,
+              technical: stockCtx.technical
+                ? {
+                    ...stockCtx.technical,
+                    lastCandlesAnalysis: stockCtx.technical.lastCandlesAnalysis
+                      ? {
+                          candlestickSummaryAr: stockCtx.technical.lastCandlesAnalysis.candlestickSummaryAr,
+                          recentBars: Array.isArray(stockCtx.technical.lastCandlesAnalysis.recentBars)
+                            ? stockCtx.technical.lastCandlesAnalysis.recentBars.slice(-5)
+                            : []
+                        }
+                      : undefined
+                  }
+                : null,
+              fundamental: stockCtx.fundamental
+                ? {
+                    available: stockCtx.fundamental.available,
+                    insufficientReasonAr: stockCtx.fundamental.insufficientReasonAr,
+                    ratios: stockCtx.fundamental.ratios
+                  }
+                : null,
+              fairValue: stockCtx.fairValue
+                ? {
+                    available: stockCtx.fairValue.available,
+                    estimatedFairValue: stockCtx.fairValue.estimatedFairValue,
+                    upsideDownsidePct: stockCtx.fairValue.upsideDownsidePct,
+                    formulaExplanationAr: stockCtx.fairValue.formulaExplanationAr
+                  }
+                : null,
+              tradingPlan: stockCtx.tradingPlan
+            },
+            sourcesSummary: {
+              overallStatus: sourcesCtx?.sourcesReport?.overallStatus,
+              failedCount: sourcesCtx?.sourcesReport?.failedProvidersCount
+            }
+          });
+
+          const callPlain = async (modelName: string) => {
+            const plainTimeout = new Promise<never>((_, reject) =>
+              setTimeout(() => {
+                const tErr: any = new Error('Plain Gemini fallback timed out');
+                tErr.status = 504;
+                reject(tErr);
+              }, PLAIN_FALLBACK_TIMEOUT_MS)
+            );
+            const plainCall = ai.models.generateContent({
+              model: modelName,
+              contents: `بيانات المنصة المحسوبة والموثقة حالياً:\n${compactContext}\n\nسؤال المستخدم: ${params.message}`,
+              config: {
+                systemInstruction,
+                thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+              }
+            });
+            return await Promise.race([plainCall, plainTimeout]);
+          };
+
+          let plainRes;
+          try {
+            plainRes = await callPlain(activeModel);
+          } catch (firstPlainErr: any) {
+            const fStatus = firstPlainErr?.status;
+            const fMsg = String(firstPlainErr?.message || '');
+            const shouldTryLite =
+              activeModel !== 'gemini-3.1-flash-lite' &&
+              (fStatus === 429 ||
+                fStatus === 503 ||
+                fStatus === 504 ||
+                fMsg.includes('RESOURCE_EXHAUSTED') ||
+                fMsg.includes('UNAVAILABLE') ||
+                fMsg.includes('timed out'));
+            if (shouldTryLite) {
+              activeModel = 'gemini-3.1-flash-lite';
+              plainRes = await callPlain(activeModel);
+            } else {
+              throw firstPlainErr;
+            }
+          }
+          finalReply = (plainRes.text || '').trim();
+        } catch (plainErr: any) {
+          const pStatus = plainErr?.status || status || 500;
+          const pMsg = String(plainErr?.message || lastUpstreamReason || rawMsg).slice(0, 160);
+          console.warn('[AiChatService] Plain Gemini fallback failed:', pStatus, pMsg);
+          if (pStatus === 429 || pMsg.includes('RESOURCE_EXHAUSTED')) {
+            const quotaErr: any = new Error(
+              lang === 'en'
+                ? 'Gemini API quota/rate limit exceeded (429). Please wait a few seconds or select a billing-enabled API key in Settings > Secrets.'
+                : 'تم تجاوز حد الطلبات المتاح لمفتاح Gemini API مؤقتاً (429). يرجى الانتظار بضع ثوانٍ أو مراجعة الحصة في لوحة Settings > Secrets.'
+            );
+            quotaErr.status = 429;
+            throw quotaErr;
+          }
+          const busyErr: any = new Error(
+            lang === 'en'
+              ? `The Gemini AI service is temporarily experiencing high demand or timed out (${pStatus}). Please try again in a few moments.`
+              : `خدمة الذكاء الاصطناعي (Gemini) مزدحمة أو استغرقت وقتاً أطول من المعتاد مؤقتاً (${pStatus}). يرجى إعادة المحاولة بعد لحظات.`
+          );
+          busyErr.status = 500;
+          throw busyErr;
+        }
+      } else {
+        throw err;
+      }
     }
 
     if (!finalReply) {
@@ -851,7 +1196,7 @@ export class AiChatService {
       usedTools: Array.from(usedToolsSet),
       webSources: Array.from(webSourcesMap.values()).slice(0, 8),
       mentionedTickers: Array.from(mentionedTickersSet),
-      modelUsed: 'gemini-4-hydrogen',
+      modelUsed: activeModel,
       timestamp: new Date().toISOString()
     };
   }

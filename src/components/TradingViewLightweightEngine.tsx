@@ -51,8 +51,9 @@ interface DrawingObject {
 interface TradingViewLightweightEngineProps {
   ticker: string;
   candles: Candle[];
-  technicals: TechnicalIndicatorsResult;
+  technicals: TechnicalIndicatorsResult | null;
   tradingPlan?: InvestmentPlanResult;
+  candleError?: string | null;
   timeframe: '1D' | '1W' | '1M';
   onTimeframeChange: (tf: '1D' | '1W' | '1M') => void;
   lang?: 'ar' | 'en';
@@ -141,6 +142,7 @@ export const TradingViewLightweightEngine: React.FC<TradingViewLightweightEngine
   candles,
   technicals,
   tradingPlan,
+  candleError,
   timeframe,
   onTimeframeChange,
   lang = 'ar',
@@ -425,7 +427,7 @@ export const TradingViewLightweightEngine: React.FC<TradingViewLightweightEngine
       priceLinesRef.current.push(pl);
     };
 
-    if (showZones) {
+    if (showZones && technicals) {
       technicals.supportZones.slice(0, 2).forEach((z, idx) => {
         addPriceLine(
           z.priceLevel,
@@ -446,7 +448,7 @@ export const TradingViewLightweightEngine: React.FC<TradingViewLightweightEngine
       });
     }
 
-    if (showFib) {
+    if (showFib && technicals) {
       technicals.fibonacciLevels.forEach((fib) => {
         addPriceLine(
           fib.level,
@@ -458,7 +460,15 @@ export const TradingViewLightweightEngine: React.FC<TradingViewLightweightEngine
       });
     }
 
-    if (showPlanLines && tradingPlan) {
+    if (
+      showPlanLines &&
+      tradingPlan &&
+      tradingPlan.available &&
+      tradingPlan.preferredEntryZone &&
+      tradingPlan.stopLossPrice !== null &&
+      tradingPlan.target1 &&
+      tradingPlan.target2
+    ) {
       addPriceLine(
         tradingPlan.preferredEntryZone.min,
         lang === 'ar' ? 'دخول مفضل (أدنى)' : 'Entry Min',
@@ -543,9 +553,13 @@ export const TradingViewLightweightEngine: React.FC<TradingViewLightweightEngine
     const onRangeChange = () => {
       setRenderTick((t) => t + 1);
       if (subChartRef.current) {
-        const range = chart.timeScale().getVisibleLogicalRange();
-        if (range) {
-          subChartRef.current.timeScale().setVisibleLogicalRange(range);
+        try {
+          const range = chart.timeScale().getVisibleLogicalRange();
+          if (range) {
+            subChartRef.current.timeScale().setVisibleLogicalRange(range);
+          }
+        } catch {
+          // Ignore sync errors if subchart is disposing
         }
       }
     };
@@ -563,7 +577,7 @@ export const TradingViewLightweightEngine: React.FC<TradingViewLightweightEngine
     }
 
     const handleResize = () => {
-      if (mainContainerRef.current && mainChartRef.current) {
+      if (mainContainerRef.current && mainChartRef.current && mainContainerRef.current.clientWidth > 0) {
         mainChartRef.current.applyOptions({ width: mainContainerRef.current.clientWidth });
         setRenderTick((t) => t + 1);
       }
@@ -572,8 +586,12 @@ export const TradingViewLightweightEngine: React.FC<TradingViewLightweightEngine
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRangeChange);
-      chart.remove();
+      try {
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRangeChange);
+        chart.remove();
+      } catch {
+        // Ignore cleanup errors on already-disposed chart
+      }
       mainChartRef.current = null;
       mainSeriesRef.current = null;
     };
@@ -700,24 +718,32 @@ export const TradingViewLightweightEngine: React.FC<TradingViewLightweightEngine
 
     // Sync initial visible range from main chart
     if (mainChartRef.current) {
-      const mainRange = mainChartRef.current.timeScale().getVisibleLogicalRange();
-      if (mainRange) {
-        sub.timeScale().setVisibleLogicalRange(mainRange);
+      try {
+        const mainRange = mainChartRef.current.timeScale().getVisibleLogicalRange();
+        if (mainRange) {
+          sub.timeScale().setVisibleLogicalRange(mainRange);
+        }
+      } catch {
+        // Ignore sync errors
       }
     }
 
     const onSubRangeChange = () => {
       if (mainChartRef.current) {
-        const range = sub.timeScale().getVisibleLogicalRange();
-        if (range) {
-          mainChartRef.current.timeScale().setVisibleLogicalRange(range);
+        try {
+          const range = sub.timeScale().getVisibleLogicalRange();
+          if (range) {
+            mainChartRef.current.timeScale().setVisibleLogicalRange(range);
+          }
+        } catch {
+          // Ignore sync errors
         }
       }
     };
     sub.timeScale().subscribeVisibleLogicalRangeChange(onSubRangeChange);
 
     const handleResize = () => {
-      if (subContainerRef.current && subChartRef.current) {
+      if (subContainerRef.current && subChartRef.current && subContainerRef.current.clientWidth > 0) {
         subChartRef.current.applyOptions({ width: subContainerRef.current.clientWidth });
       }
     };
@@ -725,8 +751,12 @@ export const TradingViewLightweightEngine: React.FC<TradingViewLightweightEngine
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      sub.timeScale().unsubscribeVisibleLogicalRangeChange(onSubRangeChange);
-      sub.remove();
+      try {
+        sub.timeScale().unsubscribeVisibleLogicalRangeChange(onSubRangeChange);
+        sub.remove();
+      } catch {
+        // Ignore cleanup errors
+      }
       subChartRef.current = null;
     };
   }, [subChart, cleanCandles, indicators]);
@@ -1119,8 +1149,26 @@ export const TradingViewLightweightEngine: React.FC<TradingViewLightweightEngine
           )}
 
           {/* Main Candlestick Canvas + Interactive SVG Drawing Layer */}
-          <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-[#090d16]">
-            <div ref={mainContainerRef} className="w-full" style={{ height: `${height}px` }} />
+          {cleanCandles.length === 0 ? (
+            <div
+              className="rounded-xl border border-rose-500/30 bg-[#090d16] flex flex-col items-center justify-center p-8 text-center gap-2"
+              style={{ height: `${height}px` }}
+            >
+              <span className="text-sm font-bold text-rose-400">
+                {lang === 'ar'
+                  ? `تعذر جلب الشموع التاريخية الحقيقية لسهم ${ticker}`
+                  : `Real historical candles unavailable for ${ticker}`}
+              </span>
+              <span className="text-xs text-slate-400 max-w-md">
+                {candleError ||
+                  (lang === 'ar'
+                    ? 'لم تتوفر بيانات شموع OHLCV كافية من Yahoo Finance؛ لا يتم رسم شموع افتراضية بديلة.'
+                    : 'No real OHLCV bars available from Yahoo Finance; synthetic fallback candles are disabled.')}
+              </span>
+            </div>
+          ) : (
+            <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-[#090d16]">
+              <div ref={mainContainerRef} className="w-full" style={{ height: `${height}px` }} />
 
             {/* Coordinate-synced SVG Drawing Overlay */}
             <svg
@@ -1261,21 +1309,24 @@ export const TradingViewLightweightEngine: React.FC<TradingViewLightweightEngine
               })}
             </svg>
           </div>
+          )}
 
           {/* Synchronized Sub-Chart Pane (RSI / MACD) */}
-          {subChart !== 'NONE' && (
+          {cleanCandles.length > 0 && subChart !== 'NONE' && (
             <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-[#090d16]">
-              <div className="absolute top-1.5 left-2.5 z-10 pointer-events-none flex items-center gap-3 text-[10px] font-mono">
-                {subChart === 'RSI' ? (
-                  <span className="text-purple-400 font-bold">RSI (14): {technicals.rsi14}</span>
-                ) : (
-                  <>
-                    <span className="text-sky-400 font-bold">MACD: {technicals.macd.macdLine}</span>
-                    <span className="text-orange-400 font-bold">Signal: {technicals.macd.signalLine}</span>
-                    <span className="text-emerald-400 font-bold">Hist: {technicals.macd.histogram}</span>
-                  </>
-                )}
-              </div>
+              {technicals && (
+                <div className="absolute top-1.5 left-2.5 z-10 pointer-events-none flex items-center gap-3 text-[10px] font-mono">
+                  {subChart === 'RSI' ? (
+                    <span className="text-purple-400 font-bold">RSI (14): {technicals.rsi14}</span>
+                  ) : (
+                    <>
+                      <span className="text-sky-400 font-bold">MACD: {technicals.macd.macdLine}</span>
+                      <span className="text-orange-400 font-bold">Signal: {technicals.macd.signalLine}</span>
+                      <span className="text-emerald-400 font-bold">Hist: {technicals.macd.histogram}</span>
+                    </>
+                  )}
+                </div>
+              )}
               <div ref={subContainerRef} className="w-full" style={{ height: '130px' }} />
             </div>
           )}

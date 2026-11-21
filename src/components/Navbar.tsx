@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Search, Bell, Globe, Sparkles, Menu, X, MessageSquareText } from 'lucide-react';
+import { Search, Bell, Globe, Sparkles, Menu, X, MessageSquareText, AlertTriangle } from 'lucide-react';
 import { EGXStockSummary } from '../types';
 import { rankSearchResults } from '../utils/searchUtils';
 
@@ -94,9 +94,13 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   };
 
-  const egx30Val = marketOverview?.egx30?.value ?? 52023.4;
-  const egx30Chg = marketOverview?.egx30?.changePct ?? -0.91;
-  const fxRate = marketOverview?.cbeData?.fxUsdEgpRate ?? 53.39;
+  const egx30Val: number | null = marketOverview?.egx30?.value ?? null;
+  const egx30Chg: number | null = marketOverview?.egx30?.changePct ?? null;
+  const egx30Status: string | undefined = marketOverview?.egx30?.status;
+  const fxRate: number | null = marketOverview?.cbeData?.fxUsdEgpRate ?? null;
+  const freshness = marketOverview?.dataStatus?.freshnessStatus;
+  const isLive = freshness === 'LIVE';
+  const isFailed = freshness === 'FAILED' || egx30Status === 'FAILED';
 
   return (
     <header className="sticky top-0 z-40 bg-slate-950/95 border-b border-slate-800 backdrop-blur-xl px-3 lg:px-6 py-2.5">
@@ -128,25 +132,53 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <div className="hidden sm:block text-[11px] text-slate-400 font-medium">
                 {lang === 'ar'
-                  ? `المحلل الذكي للبورصة المصرية (${stocks.length || 260} سهم)`
-                  : `EGX AI Platform (${stocks.length || 260} stocks)`}
+                  ? `المحلل الذكي للبورصة المصرية (${stocks.length || '—'} سهم)`
+                  : `EGX AI Platform (${stocks.length || '—'} stocks)`}
               </div>
             </div>
           </div>
 
-          {/* Live EGX30 & USD/EGP status ticker (desktop) */}
-          <div className="hidden xl:flex items-center gap-2 px-3 py-1 bg-slate-900 rounded-full border border-slate-800 text-xs text-slate-300 ms-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          {/* Real EGX30 & USD/EGP status ticker (no fabricated fallbacks) */}
+          <div
+            className={`hidden xl:flex items-center gap-2 px-3 py-1 rounded-full border text-xs ms-2 ${
+              isFailed
+                ? 'bg-rose-950/40 border-rose-500/40 text-rose-200'
+                : 'bg-slate-900 border-slate-800 text-slate-300'
+            }`}
+            title={marketOverview?.egx30?.updatedAt ? `Last update: ${marketOverview.egx30.updatedAt}` : undefined}
+          >
+            {isLive ? (
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            ) : isFailed ? (
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+            ) : (
+              <span className="w-2 h-2 rounded-full bg-amber-400" />
+            )}
+
             <span>
               {lang === 'ar' ? 'مؤشر EGX30:' : 'EGX30:'}{' '}
-              <strong className={`font-mono-numbers ${egx30Chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {egx30Val.toLocaleString()} ({egx30Chg >= 0 ? `+${egx30Chg}%` : `${egx30Chg}%`})
-              </strong>
+              {egx30Val !== null && egx30Chg !== null ? (
+                <strong className={`font-mono-numbers ${egx30Chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {egx30Val.toLocaleString()} ({egx30Chg >= 0 ? `+${egx30Chg}%` : `${egx30Chg}%`})
+                </strong>
+              ) : (
+                <strong className="text-rose-400 font-bold">
+                  {lang === 'ar' ? 'غير متاح' : 'Unavailable'}
+                </strong>
+              )}
             </span>
+
             <span className="text-slate-600">|</span>
+
             <span>
               {lang === 'ar' ? 'الدولار/جنيه:' : 'USD/EGP:'}{' '}
-              <strong className="text-white font-mono-numbers">{fxRate}</strong>
+              {fxRate !== null ? (
+                <strong className="text-white font-mono-numbers">{fxRate}</strong>
+              ) : (
+                <strong className="text-rose-400 font-bold">
+                  {lang === 'ar' ? 'غير متاح' : 'Unavailable'}
+                </strong>
+              )}
             </span>
           </div>
         </div>
@@ -160,8 +192,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               type="text"
               placeholder={
                 lang === 'ar'
-                  ? `ابحث في ${stocks.length || 260} سهم بالاسم أو الكود (COMI, CIB, فوري...)`
-                  : `Search ${stocks.length || 260} EGX stocks by name or ticker...`
+                  ? `ابحث في ${stocks.length || ''} سهم بالاسم أو الكود (COMI, CIB, فوري...)`
+                  : `Search ${stocks.length || ''} EGX stocks by name or ticker...`
               }
               value={searchQuery}
               onChange={(e) => {
@@ -227,6 +259,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         </div>
                         <div className="text-[11px] text-slate-400 truncate mt-0.5">
                           {s.nameEn} • {s.sectorAr}
+                          {s.priceDate ? ` • ${s.priceDate}` : ''}
                         </div>
                       </div>
                       <div className="text-end font-mono-numbers shrink-0">
@@ -276,7 +309,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <Bell className="w-4 h-4" />
             {unreadAlertsCount > 0 && (
-              <span className="absolute -top-1 -end-1 w-4 h-4 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
+              <span className="absolute -top-1 -end-1 w-4 h-4 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
                 {unreadAlertsCount}
               </span>
             )}

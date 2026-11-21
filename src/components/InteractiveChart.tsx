@@ -2,18 +2,19 @@ import React, { useState } from 'react';
 import { Candle, TechnicalIndicatorsResult, InvestmentPlanResult } from '../types';
 import { TradingViewWidget } from './TradingViewWidget';
 import { TradingViewLightweightEngine } from './TradingViewLightweightEngine';
-import { Maximize2, Minimize2, LineChart, Cpu, ExternalLink } from 'lucide-react';
+import { Maximize2, Minimize2, LineChart, Cpu, ExternalLink, AlertTriangle } from 'lucide-react';
 
 interface InteractiveChartProps {
   ticker?: string;
   stockNameAr?: string;
   currency?: 'EGP' | 'USD';
   candles: Candle[];
-  technicals: TechnicalIndicatorsResult;
+  technicals: TechnicalIndicatorsResult | null;
   tradingPlan?: InvestmentPlanResult;
   timeframe: '1D' | '1W' | '1M';
   onTimeframeChange: (tf: '1D' | '1W' | '1M') => void;
   lang?: 'ar' | 'en';
+  technicalErrorAr?: string | null;
 }
 
 export const InteractiveChart: React.FC<InteractiveChartProps> = ({
@@ -25,7 +26,8 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
   tradingPlan,
   timeframe,
   onTimeframeChange,
-  lang = 'ar'
+  lang = 'ar',
+  technicalErrorAr
 }) => {
   const [chartMode, setChartMode] = useState<'TRADINGVIEW_LIVE' | 'AI_ENGINE'>('TRADINGVIEW_LIVE');
   const [tvInterval, setTvInterval] = useState<'15' | '60' | '240' | 'D' | 'W' | 'M'>('D');
@@ -40,6 +42,15 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
     else onTimeframeChange('1D');
   };
 
+  const hasPlanLevels =
+    tradingPlan &&
+    tradingPlan.available &&
+    tradingPlan.preferredEntryZone &&
+    tradingPlan.stopLossPrice !== null &&
+    tradingPlan.stopLossPct !== null &&
+    tradingPlan.target1 &&
+    tradingPlan.rewardRiskRatio !== null;
+
   return (
     <div
       className={`bg-slate-900/95 border border-slate-800 shadow-2xl flex flex-col gap-3 transition-all ${
@@ -50,7 +61,6 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
     >
       {/* Top Unified TradingView Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
-        {/* Title & Mode Switcher */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <LineChart className="w-5 h-5 text-emerald-400 shrink-0" />
@@ -68,7 +78,6 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
             </div>
           </div>
 
-          {/* Segmented Switcher: Official TradingView Live vs AI Engine */}
           <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-xl border border-slate-800">
             <button
               type="button"
@@ -98,7 +107,6 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
           </div>
         </div>
 
-        {/* Quick Controls (Timeframe for Live Widget, Open External, Fullscreen) */}
         <div className="flex flex-wrap items-center gap-2">
           {chartMode === 'TRADINGVIEW_LIVE' && (
             <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 font-mono text-[11px]">
@@ -163,6 +171,19 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
           hideSideToolbar={false}
           onFallbackRequested={() => setChartMode('AI_ENGINE')}
         />
+      ) : candles.length === 0 || !technicals ? (
+        <div className="rounded-xl border border-amber-500/30 bg-slate-950/90 p-8 text-center space-y-2">
+          <AlertTriangle className="w-7 h-7 text-amber-400 mx-auto" />
+          <div className="text-sm font-bold text-white">
+            {lang === 'ar' ? 'بيانات الشموع التاريخية الحقيقية غير متاحة حالياً' : 'Real Historical Candles Unavailable'}
+          </div>
+          <p className="text-xs text-slate-400 max-w-lg mx-auto leading-relaxed">
+            {technicalErrorAr ||
+              (lang === 'ar'
+                ? 'تعذر جلب عدد كافٍ من الشموع التاريخية الحقيقية من Yahoo Finance، ولا تقوم المنصة بتوليد شموع بديلة. يمكنك استعراض شارت TradingView المباشر أعلاه.'
+                : 'Insufficient real Yahoo Finance historical candles. Switch to TradingView Live above.')}
+          </p>
+        </div>
       ) : (
         <TradingViewLightweightEngine
           ticker={ticker}
@@ -177,15 +198,15 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
         />
       )}
 
-      {/* AI Key Levels Quick Reference Bar */}
-      {tradingPlan && (
+      {/* AI Key Levels Quick Reference Bar — only when plan is computed and available */}
+      {hasPlanLevels && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2 border-t border-slate-800/70 text-xs font-mono-numbers">
           <div className="bg-slate-950/80 px-3 py-2 rounded-lg border border-slate-800/80">
             <span className="text-[10px] text-slate-400 block font-sans">
               {lang === 'ar' ? 'منطقة الدخول المفضلة' : 'Entry Zone'}
             </span>
             <strong className="text-cyan-400">
-              {tradingPlan.preferredEntryZone.min} - {tradingPlan.preferredEntryZone.max}
+              {tradingPlan.preferredEntryZone!.min} - {tradingPlan.preferredEntryZone!.max}
             </strong>
           </div>
           <div className="bg-slate-950/80 px-3 py-2 rounded-lg border border-slate-800/80">
@@ -193,7 +214,7 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
               {lang === 'ar' ? 'وقف الخسارة' : 'Stop Loss'}
             </span>
             <strong className="text-rose-400">
-              {tradingPlan.stopLossPrice} (-{tradingPlan.stopLossPct}%)
+              {tradingPlan.stopLossPrice} ({tradingPlan.stopLossPct}%)
             </strong>
           </div>
           <div className="bg-slate-950/80 px-3 py-2 rounded-lg border border-slate-800/80">
@@ -201,16 +222,20 @@ export const InteractiveChart: React.FC<InteractiveChartProps> = ({
               {lang === 'ar' ? 'الهدف الأول' : 'Target 1'}
             </span>
             <strong className="text-emerald-400">
-              {tradingPlan.target1.price} (+{tradingPlan.target1.upsidePct}%)
+              {tradingPlan.target1!.price} (+{tradingPlan.target1!.upsidePct}%)
             </strong>
           </div>
           <div className="bg-slate-950/80 px-3 py-2 rounded-lg border border-slate-800/80">
             <span className="text-[10px] text-slate-400 block font-sans">
               {lang === 'ar' ? 'الهدف الثاني' : 'Target 2'}
             </span>
-            <strong className="text-emerald-300">
-              {tradingPlan.target2.price} (+{tradingPlan.target2.upsidePct}%)
-            </strong>
+            {tradingPlan.target2 ? (
+              <strong className="text-emerald-300">
+                {tradingPlan.target2.price} (+{tradingPlan.target2.upsidePct}%)
+              </strong>
+            ) : (
+              <strong className="text-slate-500">—</strong>
+            )}
           </div>
           <div className="bg-slate-950/80 px-3 py-2 rounded-lg border border-slate-800/80">
             <span className="text-[10px] text-slate-400 block font-sans">

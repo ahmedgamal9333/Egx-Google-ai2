@@ -1,8 +1,11 @@
 import { getEGXStock } from '../data/egxStocks';
 
+export type MetricProvenance = 'PUBLISHED_STATEMENT' | 'COMPUTED_FROM_MULTIPLE' | 'UNAVAILABLE';
+export type SectorProfile = 'BANK_FINANCIAL' | 'REAL_ESTATE' | 'INDUSTRIAL_CONSUMER_UTILITY';
+
 export interface FinancialYearData {
   year: number;
-  revenue: number; // Millions EGP
+  revenue: number;
   grossProfit: number;
   operatingIncome: number;
   netIncome: number;
@@ -16,300 +19,536 @@ export interface FinancialYearData {
 }
 
 export interface FinancialRatios {
-  revenueGrowthYoY: number;
-  grossProfitMargin: number;
-  operatingMargin: number;
-  netProfitMargin: number;
-  roe: number;
-  roa: number;
-  roic: number;
-
-  peRatio: number;
-  forwardPe: number;
-  pbRatio: number;
-  evEbitda: number;
-  dividendYield: number;
-  fcfYield: number;
-
-  debtToEquity: number;
-  currentRatio: number;
-  quickRatio: number;
-  interestCoverageRatio: number;
-  cashFlowCoverage: number;
-
-  revenueCagr3Y: number;
-  earningsCagr3Y: number;
-  epsGrowthYoY: number;
-  bookValuePerShare: number;
-
-  sectorSpecific: {
-    label1: string;
-    value1: string;
-    label2: string;
-    value2: string;
-    label3: string;
-    value3: string;
-  };
-
-  fundamentalQualityScore: number;
+  grossProfitMargin: number | null;
+  operatingMargin: number | null;
+  netProfitMargin: number | null;
+  roe: number | null;
+  roa: number | null;
+  peRatio: number | null;
+  pbRatio: number | null;
+  dividendYield: number | null;
+  dividendPayoutRatio: number | null;
+  debtToEquity: number | null;
+  currentRatio: number | null;
+  freeCashFlow: number | null;
+  operatingCashFlow: number | null;
+  totalRevenue: number | null;
+  netIncomeTtm: number | null;
+  revenueGrowthPct: number | null;
+  epsGrowthPct: number | null;
+  eps: number | null;
+  bookValuePerShare: number | null;
+  marketCapEgp: number | null;
+  high52W: number | null;
+  low52W: number | null;
+  fundamentalQualityScore: number | null;
   earningsQualityStatusAr: string;
   financialRiskStatusAr: string;
+  dividendSustainabilityAr: string;
 }
 
 export interface FundamentalDataResult {
   ticker: string;
+  available: boolean;
+  insufficientReasonAr?: string;
+  sectorProfile: SectorProfile;
+  sectorProfileAr: string;
+  fundamentalConfidence: 'HIGH' | 'MEDIUM' | 'LOW' | 'UNAVAILABLE';
+  availableMetricsCount: number;
+  dataCompletenessPct: number;
   reportingPeriod: string;
-  publicationDate: string;
-  auditorOpinion: 'UNQUALIFIED' | 'QUALIFIED' | 'EMPHASIS_OF_MATTER';
-  auditorName: string;
+  fiscalPeriodEndDate: string | null;
+  earningsReleaseDate: string | null;
+  nextEarningsDate: string | null;
+  dataSourceLabel: string;
+  publicationDate: string | null;
+  publishedMetrics: Record<string, number | string | null>;
+  derivedMetrics: {
+    impliedEpsFromPe: number | null;
+    impliedBvpsFromPb: number | null;
+    marketCapFromListedShares: number | null;
+    fcfToNetIncomeRatio: number | null;
+    noteAr: string;
+  };
+  unavailableMetrics: string[];
+  metricProvenance: Record<string, MetricProvenance>;
   historicalYears: FinancialYearData[];
+  historicalStatementsNoteAr: string;
+  qualityScoreFormulaAr: string;
+  qualityScoreComponents: { labelAr: string; points: number; detailAr: string }[];
   ratios: FinancialRatios;
+}
+
+export function classifySectorProfile(sectorEn: string, sectorAr: string): {
+  profile: SectorProfile;
+  labelAr: string;
+} {
+  const combined = `${sectorEn} ${sectorAr}`.toLowerCase();
+  if (/bank|financial|بنوك|خدمات مالية|تمويل/.test(combined)) {
+    return {
+      profile: 'BANK_FINANCIAL',
+      labelAr: 'قطاع البنوك والخدمات المالية (يُستبعد الدَّين للودائع والنسبة الجارية التقليدية)'
+    };
+  }
+  if (/real estate|عقار|مقاولات/.test(combined)) {
+    return {
+      profile: 'REAL_ESTATE',
+      labelAr: 'قطاع العقارات والتطوير (رافعة تمويل مشاريع طبيعية)'
+    };
+  }
+  return {
+    profile: 'INDUSTRIAL_CONSUMER_UTILITY',
+    labelAr: 'قطاع تشغيلي / صناعي / استهلاكي / اتصالات'
+  };
 }
 
 export class FundamentalAnalysisEngine {
   public static getFinancials(ticker: string, currentPrice: number): FundamentalDataResult {
     const norm = ticker.toUpperCase().replace('.CA', '');
     const stock = getEGXStock(norm);
-    const today = new Date().toISOString().split('T')[0];
-    const currentYear = Math.max(2026, new Date().getFullYear());
+    const priceDate = stock?.priceDate || null;
 
-    switch (norm) {
-      case 'COMI': {
-        const history: FinancialYearData[] = [
-          { year: 2023, revenue: 52800, grossProfit: 39400, operatingIncome: 35100, netIncome: 29660, eps: 9.82, totalAssets: 832000, totalEquity: 112000, totalDebt: 45000, operatingCashFlow: 31500, freeCashFlow: 27800, dividendPerShare: 3.5 },
-          { year: 2024, revenue: 78500, grossProfit: 61200, operatingIncome: 55400, netIncome: 46800, eps: 15.5, totalAssets: 1045000, totalEquity: 148000, totalDebt: 52000, operatingCashFlow: 49200, freeCashFlow: 43500, dividendPerShare: 5.5 },
-          { year: 2025, revenue: 98200, grossProfit: 78400, operatingIncome: 70100, netIncome: 58500, eps: 19.37, totalAssets: 1260000, totalEquity: 185000, totalDebt: 59000, operatingCashFlow: 61000, freeCashFlow: 54200, dividendPerShare: 7.0 },
-          { year: 2026, revenue: 116500, grossProfit: 93800, operatingIncome: 84200, netIncome: 69400, eps: 22.98, totalAssets: 1495000, totalEquity: 224000, totalDebt: 64000, operatingCashFlow: 72500, freeCashFlow: 64100, dividendPerShare: 8.5 }
-        ];
-        const eps = 22.98;
-        const bv = 224000 / 3019.5;
-        const pe = stock?.tvPeRatio || Number((currentPrice / eps).toFixed(1));
-        const pb = stock?.tvPbRatio || Number((currentPrice / bv).toFixed(2));
-        const divY = stock?.tvDividendYield ?? Number(((8.5 / currentPrice) * 100).toFixed(1));
-        return {
-          ticker: 'COMI',
-          reportingPeriod: `النتائج المالية المجمعة والمحدثة (${currentYear} TTM)`,
-          publicationDate: today,
-          auditorOpinion: 'UNQUALIFIED',
-          auditorName: 'PricewaterhouseCoopers (PwC) & KPMG حازم حسن',
-          historicalYears: history,
-          ratios: {
-            revenueGrowthYoY: 18.6,
-            grossProfitMargin: 80.5,
-            operatingMargin: 72.3,
-            netProfitMargin: 59.6,
-            roe: 34.9,
-            roa: 5.0,
-            roic: 29.1,
-            peRatio: pe,
-            forwardPe: Number((pe * 0.85).toFixed(1)),
-            pbRatio: pb,
-            evEbitda: 4.9,
-            dividendYield: divY,
-            fcfYield: 14.5,
-            debtToEquity: 0.29,
-            currentRatio: 1.52,
-            quickRatio: 1.31,
-            interestCoverageRatio: 9.6,
-            cashFlowCoverage: 2.4,
-            revenueCagr3Y: 30.2,
-            earningsCagr3Y: 32.8,
-            epsGrowthYoY: 18.6,
-            bookValuePerShare: Number(bv.toFixed(2)),
-            sectorSpecific: {
-              label1: 'كفاية رأس المال (CAR)',
-              value1: '27.2% (الحد الأدنى للبنك المركزي 12.5%)',
-              label2: 'القروض غير المنتظمة (NPL)',
-              value2: '3.4% مع نسبة تغطية مخصصات تفوق 300%',
-              label3: 'هامش الفائدة الصافي (NIM)',
-              value3: '9.4%'
-            },
-            fundamentalQualityScore: 94,
-            earningsQualityStatusAr: 'جودة أرباح استثنائية مدعومة بهوامش فائدة قياسية ومخصصات تحوطية بالغة المتانة',
-            financialRiskStatusAr: 'مخاطر مالية منخفضة للغاية وملاءة رأسمالية فائقة تفوق متطلبات البنك المركزي المصري ومعايير بازل 3'
-          }
-        };
+    if (!stock) {
+      return {
+        ticker: norm,
+        available: false,
+        insufficientReasonAr: `لم يتم العثور على بيانات السهم ${norm} في قاعدة البورصة المصرية.`,
+        sectorProfile: 'INDUSTRIAL_CONSUMER_UTILITY',
+        sectorProfileAr: 'غير محدد',
+        fundamentalConfidence: 'UNAVAILABLE',
+        availableMetricsCount: 0,
+        dataCompletenessPct: 0,
+        reportingPeriod: 'غير متوفر',
+        fiscalPeriodEndDate: null,
+        earningsReleaseDate: null,
+        nextEarningsDate: null,
+        dataSourceLabel: 'غير متوفر',
+        publicationDate: null,
+        publishedMetrics: {},
+        derivedMetrics: {
+          impliedEpsFromPe: null,
+          impliedBvpsFromPb: null,
+          marketCapFromListedShares: null,
+          fcfToNetIncomeRatio: null,
+          noteAr: 'السهم غير موجود.'
+        },
+        unavailableMetrics: ['جميع المؤشرات المالية غير متوفرة'],
+        metricProvenance: {},
+        historicalYears: [],
+        historicalStatementsNoteAr: 'القوائم المالية غير متوفرة.',
+        qualityScoreFormulaAr: 'لا يتوفر تقييم مالي لعدم وجود السهم.',
+        qualityScoreComponents: [],
+        ratios: {
+          grossProfitMargin: null,
+          operatingMargin: null,
+          netProfitMargin: null,
+          roe: null,
+          roa: null,
+          peRatio: null,
+          pbRatio: null,
+          dividendYield: null,
+          dividendPayoutRatio: null,
+          debtToEquity: null,
+          currentRatio: null,
+          freeCashFlow: null,
+          operatingCashFlow: null,
+          totalRevenue: null,
+          netIncomeTtm: null,
+          revenueGrowthPct: null,
+          epsGrowthPct: null,
+          eps: null,
+          bookValuePerShare: null,
+          marketCapEgp: null,
+          high52W: null,
+          low52W: null,
+          fundamentalQualityScore: null,
+          earningsQualityStatusAr: 'لا تتوفر بيانات مالية معتمدة',
+          financialRiskStatusAr: 'لا تتوفر بيانات ملاءة مالية',
+          dividendSustainabilityAr: 'غير متاح'
+        }
+      };
+    }
+
+    const { profile: sectorProfile, labelAr: sectorProfileAr } = classifySectorProfile(
+      stock.sectorEn,
+      stock.sectorAr
+    );
+
+    // 1. PUBLISHED STATEMENT / VERIFIED TRADINGVIEW TTM-FQ FIGURES (Never circularly derived from Price / P/E)
+    const peRatio = stock.tvPeRatio ?? null;
+    const pbRatio = stock.tvPbRatio ?? null;
+    const dividendYield = stock.tvDividendYield ?? null;
+    const dividendPayoutRatio = stock.tvDividendPayoutRatio ?? null;
+    const roe = stock.tvRoe ?? null;
+    const roa = stock.tvRoa ?? null;
+    const debtToEquity = stock.tvDebtToEquity ?? null;
+    const currentRatio = stock.tvCurrentRatio ?? null;
+    const netProfitMargin = stock.tvNetMargin ?? null;
+    const operatingMargin = stock.tvOperatingMargin ?? null;
+    const grossProfitMargin = stock.tvGrossMargin ?? null;
+    const freeCashFlow = stock.tvFreeCashFlow ?? null;
+    const operatingCashFlow = stock.tvOperatingCashFlow ?? null;
+    const totalRevenue = stock.tvTotalRevenue ?? null;
+    const netIncomeTtm = stock.tvNetIncomeTtm ?? stock.tvNetIncome ?? null;
+    const revenueGrowthPct = stock.tvRevenueGrowthYoy ?? null;
+    const epsGrowthPct = stock.tvEpsGrowthYoy ?? null;
+
+    const publishedEps =
+      stock.tvEps !== null && stock.tvEps !== undefined
+        ? stock.tvEps
+        : stock.tvLastAnnualEps !== null && stock.tvLastAnnualEps !== undefined
+        ? stock.tvLastAnnualEps
+        : null;
+
+    const publishedBvps =
+      stock.tvBvps !== null && stock.tvBvps !== undefined
+        ? stock.tvBvps
+        : stock.tvBookValue !== null && stock.tvBookValue !== undefined
+        ? stock.tvBookValue
+        : null;
+
+    // 2. MATHEMATICALLY DERIVED FIGURES (Strictly separated and labeled; NEVER disguised as published)
+    const impliedEpsFromPe =
+      publishedEps === null && peRatio && peRatio > 0 && currentPrice > 0
+        ? Number((currentPrice / peRatio).toFixed(3))
+        : null;
+    const impliedBvpsFromPb =
+      publishedBvps === null && pbRatio && pbRatio > 0 && currentPrice > 0
+        ? Number((currentPrice / pbRatio).toFixed(3))
+        : null;
+    const marketCapFromListedShares =
+      stock.listedShares > 0 && currentPrice > 0
+        ? Math.round(stock.listedShares * currentPrice * 1_000_000)
+        : null;
+    const marketCapEgp = stock.tvMarketCap ?? marketCapFromListedShares;
+
+    const fcfToNetIncomeRatio =
+      freeCashFlow !== null && netIncomeTtm !== null && netIncomeTtm > 0
+        ? Number((freeCashFlow / netIncomeTtm).toFixed(2))
+        : null;
+
+    const metricProvenance: Record<string, MetricProvenance> = {
+      peRatio: peRatio !== null ? 'PUBLISHED_STATEMENT' : 'UNAVAILABLE',
+      pbRatio: pbRatio !== null ? 'PUBLISHED_STATEMENT' : 'UNAVAILABLE',
+      eps: publishedEps !== null ? 'PUBLISHED_STATEMENT' : impliedEpsFromPe !== null ? 'COMPUTED_FROM_MULTIPLE' : 'UNAVAILABLE',
+      bookValuePerShare:
+        publishedBvps !== null ? 'PUBLISHED_STATEMENT' : impliedBvpsFromPb !== null ? 'COMPUTED_FROM_MULTIPLE' : 'UNAVAILABLE',
+      roe: roe !== null ? 'PUBLISHED_STATEMENT' : 'UNAVAILABLE',
+      roa: roa !== null ? 'PUBLISHED_STATEMENT' : 'UNAVAILABLE',
+      netProfitMargin: netProfitMargin !== null ? 'PUBLISHED_STATEMENT' : 'UNAVAILABLE',
+      operatingMargin: operatingMargin !== null ? 'PUBLISHED_STATEMENT' : 'UNAVAILABLE',
+      debtToEquity: debtToEquity !== null ? 'PUBLISHED_STATEMENT' : 'UNAVAILABLE',
+      currentRatio: currentRatio !== null ? 'PUBLISHED_STATEMENT' : 'UNAVAILABLE',
+      freeCashFlow: freeCashFlow !== null ? 'PUBLISHED_STATEMENT' : 'UNAVAILABLE',
+      dividendYield: dividendYield !== null ? 'PUBLISHED_STATEMENT' : 'UNAVAILABLE',
+      revenueGrowthPct: revenueGrowthPct !== null ? 'PUBLISHED_STATEMENT' : 'UNAVAILABLE',
+      epsGrowthPct: epsGrowthPct !== null ? 'PUBLISHED_STATEMENT' : 'UNAVAILABLE',
+      marketCapEgp:
+        stock.tvMarketCap !== null && stock.tvMarketCap !== undefined
+          ? 'PUBLISHED_STATEMENT'
+          : marketCapFromListedShares !== null
+          ? 'COMPUTED_FROM_MULTIPLE'
+          : 'UNAVAILABLE'
+    };
+
+    const publishedMetrics: Record<string, number | string | null> = {
+      peRatio,
+      pbRatio,
+      publishedEps,
+      publishedBvps,
+      roe,
+      roa,
+      netProfitMargin,
+      operatingMargin,
+      grossProfitMargin,
+      debtToEquity,
+      currentRatio,
+      freeCashFlow,
+      operatingCashFlow,
+      dividendYield,
+      dividendPayoutRatio,
+      totalRevenue,
+      netIncomeTtm,
+      revenueGrowthPct,
+      epsGrowthPct,
+      fiscalPeriodEndDate: stock.tvFiscalPeriodEndDate ?? null,
+      earningsReleaseDate: stock.tvEarningsReleaseDate ?? null
+    };
+
+    const fieldLabelMap: [string, unknown][] = [
+      ['P/E مكرر الربحية', peRatio],
+      ['P/B مضاعف القيمة الدفترية', pbRatio],
+      ['ربحية السهم المنشورة (EPS)', publishedEps],
+      ['القيمة الدفترية المنشورة (BVPS)', publishedBvps],
+      ['العائد على الملكية (ROE)', roe],
+      ['العائد على الأصول (ROA)', roa],
+      ['هامش صافي الربح', netProfitMargin],
+      ['هامش الربح التشغيلي', operatingMargin],
+      ['التدفقات النقدية الحرة (FCF)', freeCashFlow],
+      ['نمو الإيرادات السنوي', revenueGrowthPct],
+      ['نمو ربحية السهم السنوي', epsGrowthPct],
+      ['عائد التوزيعات النقدي', dividendYield]
+    ];
+    if (sectorProfile !== 'BANK_FINANCIAL') {
+      fieldLabelMap.push(['نسبة الدين للملكية (D/E)', debtToEquity], ['النسبة الجارية (Current Ratio)', currentRatio]);
+    }
+
+    const unavailableMetrics = fieldLabelMap.filter(([, val]) => val === null || val === undefined).map(([lbl]) => lbl);
+
+    const coreRelevant =
+      sectorProfile === 'BANK_FINANCIAL'
+        ? [peRatio, pbRatio, publishedEps, publishedBvps, roe, roa, netProfitMargin, dividendYield]
+        : [peRatio, pbRatio, publishedEps, publishedBvps, roe, debtToEquity, currentRatio, netProfitMargin, freeCashFlow, revenueGrowthPct];
+
+    const availableMetricsCount = coreRelevant.filter((v) => v !== null && v !== undefined).length;
+    const dataCompletenessPct = Math.round((availableMetricsCount / coreRelevant.length) * 100);
+    const available = availableMetricsCount >= 3;
+
+    let fundamentalConfidence: FundamentalDataResult['fundamentalConfidence'] = 'UNAVAILABLE';
+    if (!available) {
+      fundamentalConfidence = 'UNAVAILABLE';
+    } else if (dataCompletenessPct >= 75 && publishedEps !== null && publishedBvps !== null) {
+      fundamentalConfidence = 'HIGH';
+    } else if (dataCompletenessPct >= 50) {
+      fundamentalConfidence = 'MEDIUM';
+    } else {
+      fundamentalConfidence = 'LOW';
+    }
+
+    // 3. SECTOR-AWARE FUNDAMENTAL QUALITY SCORING
+    const qualityScoreComponents: { labelAr: string; points: number; detailAr: string }[] = [];
+    let fundamentalQualityScore: number | null = null;
+    let qualityScoreFormulaAr = '';
+
+    if (available) {
+      let totalPoints = 45;
+      qualityScoreComponents.push({
+        labelAr: 'أساس التقييم المالي القطاعي',
+        points: 45,
+        detailAr: sectorProfileAr
+      });
+
+      if (peRatio !== null) {
+        const pts = peRatio > 0 && peRatio <= 8 ? 14 : peRatio > 0 && peRatio <= 14 ? 9 : peRatio > 0 && peRatio <= 22 ? 2 : -12;
+        totalPoints += pts;
+        qualityScoreComponents.push({
+          labelAr: 'مكرر الربحية P/E',
+          points: pts,
+          detailAr: `P/E منشور = ${peRatio}x`
+        });
       }
-      case 'TMGH': {
-        const history: FinancialYearData[] = [
-          { year: 2023, revenue: 28400, grossProfit: 10100, operatingIncome: 5600, netIncome: 3310, eps: 1.6, totalAssets: 202000, totalEquity: 43800, totalDebt: 16800, operatingCashFlow: 7800, freeCashFlow: 4900, dividendPerShare: 0.35 },
-          { year: 2024, revenue: 52400, grossProfit: 21100, operatingIncome: 15300, netIncome: 9800, eps: 4.75, totalAssets: 310000, totalEquity: 84000, totalDebt: 22400, operatingCashFlow: 19200, freeCashFlow: 14500, dividendPerShare: 0.85 },
-          { year: 2025, revenue: 76000, grossProfit: 31200, operatingIncome: 23400, netIncome: 15800, eps: 7.65, totalAssets: 420000, totalEquity: 112000, totalDebt: 26000, operatingCashFlow: 28500, freeCashFlow: 21800, dividendPerShare: 1.5 },
-          { year: 2026, revenue: 94500, grossProfit: 39800, operatingIncome: 30200, netIncome: 20400, eps: 9.89, totalAssets: 515000, totalEquity: 138000, totalDebt: 28500, operatingCashFlow: 35600, freeCashFlow: 27400, dividendPerShare: 2.1 }
-        ];
-        const eps = 9.89;
-        const bv = 138000 / 2063.5;
-        const pe = stock?.tvPeRatio || Number((currentPrice / eps).toFixed(1));
-        const pb = stock?.tvPbRatio || Number((currentPrice / bv).toFixed(2));
-        const divY = stock?.tvDividendYield ?? Number(((2.1 / currentPrice) * 100).toFixed(1));
-        return {
-          ticker: 'TMGH',
-          reportingPeriod: `النتائج المالية المجمعة والمحدثة (${currentYear} TTM)`,
-          publicationDate: today,
-          auditorOpinion: 'UNQUALIFIED',
-          auditorName: 'Ernst & Young (EY)',
-          historicalYears: history,
-          ratios: {
-            revenueGrowthYoY: 24.3,
-            grossProfitMargin: 42.1,
-            operatingMargin: 32.0,
-            netProfitMargin: 21.6,
-            roe: 18.9,
-            roa: 4.5,
-            roic: 16.8,
-            peRatio: pe,
-            forwardPe: Number((pe * 0.82).toFixed(1)),
-            pbRatio: pb,
-            evEbitda: 7.1,
-            dividendYield: divY,
-            fcfYield: 12.8,
-            debtToEquity: 0.21,
-            currentRatio: 2.2,
-            quickRatio: 0.82,
-            interestCoverageRatio: 8.1,
-            cashFlowCoverage: 2.3,
-            revenueCagr3Y: 49.3,
-            earningsCagr3Y: 83.3,
-            epsGrowthYoY: 29.3,
-            bookValuePerShare: Number(bv.toFixed(2)),
-            sectorSpecific: {
-              label1: 'المبيعات التعاقدية غير المسلمة',
-              value1: 'تتجاوز 620 مليار جنيه مصري (مضمونة للسنوات القادمة)',
-              label2: 'بنك الأراضي الإجمالي',
-              value2: '107 ملايين متر مربع (مشروع ساوث ميد + بنان الرياض)',
-              label3: 'إيرادات الفنادق بالعملة الأجنبية',
-              value3: 'تدفقات دولارية متصاعدة من محفظة الفنادق التاريخية'
-            },
-            fundamentalQualityScore: 92,
-            earningsQualityStatusAr: 'أرباح مستقبلية مضمونة بفضل طفرة المبيعات التعاقدية وإيرادات الضيافة الفندقية بالدولار',
-            financialRiskStatusAr: 'رافعة مالية آمنة للغاية وتدفقات نقدية مستقبلية ضخمة تغطي تكاليف الإنشاءات والتسليمات'
-          }
-        };
+
+      if (roe !== null) {
+        const pts = roe >= 22 ? 15 : roe >= 14 ? 10 : roe >= 5 ? 3 : -10;
+        totalPoints += pts;
+        qualityScoreComponents.push({
+          labelAr: 'العائد على حقوق الملكية ROE',
+          points: pts,
+          detailAr: `ROE منشور = ${roe}%`
+        });
       }
-      case 'SWDY': {
-        const history: FinancialYearData[] = [
-          { year: 2023, revenue: 152100, grossProfit: 24800, operatingIncome: 14800, netIncome: 11140, eps: 5.13, totalAssets: 142000, totalEquity: 41200, totalDebt: 32000, operatingCashFlow: 14100, freeCashFlow: 9800, dividendPerShare: 2.2 },
-          { year: 2024, revenue: 218000, grossProfit: 37200, operatingIncome: 23100, netIncome: 18800, eps: 8.66, totalAssets: 198000, totalEquity: 63500, totalDebt: 41000, operatingCashFlow: 22100, freeCashFlow: 16800, dividendPerShare: 3.6 },
-          { year: 2025, revenue: 265000, grossProfit: 46800, operatingIncome: 29500, netIncome: 24200, eps: 11.15, totalAssets: 242000, totalEquity: 81000, totalDebt: 48000, operatingCashFlow: 29000, freeCashFlow: 22400, dividendPerShare: 4.8 },
-          { year: 2026, revenue: 312000, grossProfit: 56200, operatingIncome: 35800, netIncome: 28900, eps: 13.31, totalAssets: 285000, totalEquity: 98500, totalDebt: 52000, operatingCashFlow: 34800, freeCashFlow: 27100, dividendPerShare: 5.6 }
-        ];
-        const eps = 13.31;
-        const bv = 98500 / 2170.8;
-        const pe = stock?.tvPeRatio || Number((currentPrice / eps).toFixed(1));
-        const pb = stock?.tvPbRatio || Number((currentPrice / bv).toFixed(2));
-        const divY = stock?.tvDividendYield ?? Number(((5.6 / currentPrice) * 100).toFixed(1));
-        return {
-          ticker: 'SWDY',
-          reportingPeriod: `النتائج المالية المجمعة والمحدثة (${currentYear} TTM)`,
-          publicationDate: today,
-          auditorOpinion: 'UNQUALIFIED',
-          auditorName: 'Deloitte صالح وبرسوم وعبد العزيز',
-          historicalYears: history,
-          ratios: {
-            revenueGrowthYoY: 17.7,
-            grossProfitMargin: 18.0,
-            operatingMargin: 11.5,
-            netProfitMargin: 9.3,
-            roe: 32.8,
-            roa: 11.1,
-            roic: 25.4,
-            peRatio: pe,
-            forwardPe: Number((pe * 0.84).toFixed(1)),
-            pbRatio: pb,
-            evEbitda: 5.7,
-            dividendYield: divY,
-            fcfYield: 11.6,
-            debtToEquity: 0.53,
-            currentRatio: 1.46,
-            quickRatio: 1.05,
-            interestCoverageRatio: 6.7,
-            cashFlowCoverage: 1.9,
-            revenueCagr3Y: 27.1,
-            earningsCagr3Y: 37.4,
-            epsGrowthYoY: 19.4,
-            bookValuePerShare: Number(bv.toFixed(2)),
-            sectorSpecific: {
-              label1: 'نسبة الصادرات والإيرادات الدولية',
-              value1: '58% بالدولار واليورو والريال السعودي',
-              label2: 'حجم الأعمال المتراكمة (Backlog)',
-              value2: 'يتجاوز 5.2 مليار دولار للمشاريع الهندسية ومحطات الطاقة',
-              label3: 'حصة قطاع الكابلات من الأرباح',
-              value3: '55% مع قوة تسعيرية مرتفعة'
-            },
-            fundamentalQualityScore: 93,
-            earningsQualityStatusAr: 'نمو تشغيلي ضخم وتدفقات نقدية حرة قوية مدعومة بالتصدير والعقود الإقليمية بالخليج وأفريقيا',
-            financialRiskStatusAr: 'مخاطر منخفضة وقدرة تغطية ديون ممتازة نظراً لغزارة الإيرادات الدولارية'
-          }
-        };
+
+      if (sectorProfile === 'BANK_FINANCIAL' && roa !== null) {
+        const pts = roa >= 2.0 ? 10 : roa >= 1.2 ? 6 : roa > 0 ? 2 : -8;
+        totalPoints += pts;
+        qualityScoreComponents.push({
+          labelAr: 'العائد على الأصول المصرفية ROA',
+          points: pts,
+          detailAr: `ROA مصرفي = ${roa}%`
+        });
       }
-      default: {
-        // Use live TradingView P/E, P/B, Dividend Yield when available
-        const livePe = stock?.tvPeRatio && stock.tvPeRatio > 0 && stock.tvPeRatio < 120 ? stock.tvPeRatio : null;
-        const livePb = stock?.tvPbRatio && stock.tvPbRatio > 0 && stock.tvPbRatio < 40 ? stock.tvPbRatio : null;
-        const liveDiv = stock?.tvDividendYield !== null && stock?.tvDividendYield !== undefined ? stock.tvDividendYield : 4.2;
 
-        const effectivePe = livePe || 10.2;
-        const estEps = Number(Math.max(0.01, currentPrice / effectivePe).toFixed(2));
-        const estBv = Number(Math.max(0.01, currentPrice / (livePb || 1.85)).toFixed(2));
+      if (netProfitMargin !== null) {
+        const pts = netProfitMargin >= 20 ? 10 : netProfitMargin >= 10 ? 5 : netProfitMargin > 0 ? 1 : -12;
+        totalPoints += pts;
+        qualityScoreComponents.push({
+          labelAr: 'هامش صافي الربح',
+          points: pts,
+          detailAr: `Net Margin = ${netProfitMargin}%`
+        });
+      }
 
-        const baseShares = stock?.listedShares || 500;
-        const netIncCurr = Math.max(50, Math.round(estEps * baseShares));
-        const revCurr = Math.round(netIncCurr * 5.8);
+      if (sectorProfile !== 'BANK_FINANCIAL' && debtToEquity !== null) {
+        const maxSafeDe = sectorProfile === 'REAL_ESTATE' ? 1.8 : 1.1;
+        const lowDe = sectorProfile === 'REAL_ESTATE' ? 0.9 : 0.5;
+        const pts = debtToEquity <= lowDe ? 8 : debtToEquity <= maxSafeDe ? 3 : -9;
+        totalPoints += pts;
+        qualityScoreComponents.push({
+          labelAr: 'نسبة الدين إلى الملكية (معيار قطاعي)',
+          points: pts,
+          detailAr: `D/E = ${debtToEquity} (حد القطاع ${maxSafeDe})`
+        });
+      }
 
-        const y0 = currentYear - 3;
-        const y1 = currentYear - 2;
-        const y2 = currentYear - 1;
-        const y3 = currentYear;
+      if (sectorProfile !== 'BANK_FINANCIAL' && currentRatio !== null) {
+        const pts = currentRatio >= 1.5 ? 6 : currentRatio >= 1.0 ? 2 : -7;
+        totalPoints += pts;
+        qualityScoreComponents.push({
+          labelAr: 'السيولة قصيرة الأجل (Current Ratio)',
+          points: pts,
+          detailAr: `Current Ratio = ${currentRatio}x`
+        });
+      }
 
-        return {
-          ticker: norm,
-          reportingPeriod: `البيانات المالية والتقييمية المحدثة (${currentYear} TTM)`,
-          publicationDate: today,
-          auditorOpinion: 'UNQUALIFIED',
-          auditorName: 'المراجع القانوني المعتمد بالهيئة العامة للرقابة المالية',
-          historicalYears: [
-            { year: y0, revenue: Math.round(revCurr * 0.56), grossProfit: Math.round(revCurr * 0.17), operatingIncome: Math.round(revCurr * 0.11), netIncome: Math.round(netIncCurr * 0.52), eps: Number((estEps * 0.52).toFixed(2)), totalAssets: Math.round(revCurr * 0.9), totalEquity: Math.round(baseShares * estBv * 0.6), totalDebt: Math.round(baseShares * estBv * 0.22), operatingCashFlow: Math.round(netIncCurr * 0.6), freeCashFlow: Math.round(netIncCurr * 0.42), dividendPerShare: Number((estEps * 0.18).toFixed(2)) },
-            { year: y1, revenue: Math.round(revCurr * 0.71), grossProfit: Math.round(revCurr * 0.22), operatingIncome: Math.round(revCurr * 0.15), netIncome: Math.round(netIncCurr * 0.68), eps: Number((estEps * 0.68).toFixed(2)), totalAssets: Math.round(revCurr * 1.15), totalEquity: Math.round(baseShares * estBv * 0.74), totalDebt: Math.round(baseShares * estBv * 0.26), operatingCashFlow: Math.round(netIncCurr * 0.78), freeCashFlow: Math.round(netIncCurr * 0.56), dividendPerShare: Number((estEps * 0.24).toFixed(2)) },
-            { year: y2, revenue: Math.round(revCurr * 0.85), grossProfit: Math.round(revCurr * 0.27), operatingIncome: Math.round(revCurr * 0.18), netIncome: Math.round(netIncCurr * 0.84), eps: Number((estEps * 0.84).toFixed(2)), totalAssets: Math.round(revCurr * 1.32), totalEquity: Math.round(baseShares * estBv * 0.88), totalDebt: Math.round(baseShares * estBv * 0.3), operatingCashFlow: Math.round(netIncCurr * 0.94), freeCashFlow: Math.round(netIncCurr * 0.71), dividendPerShare: Number((estEps * 0.32).toFixed(2)) },
-            { year: y3, revenue: revCurr, grossProfit: Math.round(revCurr * 0.32), operatingIncome: Math.round(revCurr * 0.22), netIncome: netIncCurr, eps: estEps, totalAssets: Math.round(revCurr * 1.48), totalEquity: Math.round(baseShares * estBv), totalDebt: Math.round(baseShares * estBv * 0.34), operatingCashFlow: Math.round(netIncCurr * 1.15), freeCashFlow: Math.round(netIncCurr * 0.85), dividendPerShare: Number(((currentPrice * liveDiv) / 100).toFixed(2)) }
-          ],
-          ratios: {
-            revenueGrowthYoY: 17.6,
-            grossProfitMargin: 32.0,
-            operatingMargin: 22.0,
-            netProfitMargin: 17.2,
-            roe: Number(Math.min(45, Math.max(8, (livePb || 1.85) * 100 / effectivePe)).toFixed(1)),
-            roa: 11.4,
-            roic: 18.6,
-            peRatio: Number(effectivePe.toFixed(1)),
-            forwardPe: Number((effectivePe * 0.84).toFixed(1)),
-            pbRatio: Number((livePb || 1.85).toFixed(2)),
-            evEbitda: 6.4,
-            dividendYield: Number(liveDiv.toFixed(1)),
-            fcfYield: 9.6,
-            debtToEquity: 0.34,
-            currentRatio: 1.72,
-            quickRatio: 1.2,
-            interestCoverageRatio: 6.8,
-            cashFlowCoverage: 2.1,
-            revenueCagr3Y: 21.3,
-            earningsCagr3Y: 24.4,
-            epsGrowthYoY: 19.0,
-            bookValuePerShare: estBv,
-            sectorSpecific: {
-              label1: 'نسبة التدفقات النقدية التشغيلية',
-              value1: '115% من صافي الأرباح المحققة',
-              label2: 'كفاءة رأس المال العامل',
-              value2: 'دورة تحويل نقدي 42 يوماً',
-              label3: 'عائد التوزيعات والملاءة',
-              value3: `توزيع نقدي ${liveDiv.toFixed(1)}% مع سيولة تغطي الالتزامات`
-            },
-            fundamentalQualityScore: effectivePe <= 14 ? 85 : 74,
-            earningsQualityStatusAr: 'أداء مالي مستقر مع نمو في الربحية التشغيلية وتوليد سيولة نقدية كافية لتمويل التوسعات',
-            financialRiskStatusAr: 'مستويات مديونية معتدلة وقدرة متينة على الوفاء بأعباء الديون وخدمة التسهيلات الائتمانية'
-          }
-        };
+      if (sectorProfile !== 'BANK_FINANCIAL' && freeCashFlow !== null) {
+        const pts = freeCashFlow > 0 ? 6 : -6;
+        totalPoints += pts;
+        qualityScoreComponents.push({
+          labelAr: 'التدفق النقدي الحر (FCF)',
+          points: pts,
+          detailAr: freeCashFlow > 0 ? 'تدفق نقدي حر موجب داعم لجودة الأرباح' : 'تدفق نقدي حر سالب يتطلب مراقبة'
+        });
+      }
+
+      if (revenueGrowthPct !== null) {
+        const pts = revenueGrowthPct >= 20 ? 7 : revenueGrowthPct >= 5 ? 3 : revenueGrowthPct < -5 ? -6 : 0;
+        if (pts !== 0) {
+          totalPoints += pts;
+          qualityScoreComponents.push({
+            labelAr: 'نمو الإيرادات السنوي',
+            points: pts,
+            detailAr: `نمو الإيرادات = ${revenueGrowthPct}%`
+          });
+        }
+      }
+
+      if (dividendYield !== null && dividendYield > 0) {
+        const pts = dividendYield >= 4 ? 5 : 2;
+        totalPoints += pts;
+        qualityScoreComponents.push({
+          labelAr: 'عائد التوزيعات النقدية',
+          points: pts,
+          detailAr: `توزيع ${dividendYield}%`
+        });
+      }
+
+      fundamentalQualityScore = Math.max(5, Math.min(98, totalPoints));
+      qualityScoreFormulaAr = `45 + (${qualityScoreComponents
+        .slice(1)
+        .map((c) => `${c.points >= 0 ? `+${c.points}` : c.points} [${c.labelAr}]`)
+        .join(' ')}) = ${fundamentalQualityScore}/100`;
+    } else {
+      qualityScoreFormulaAr = `نقص البيانات المالية المنشورة (${availableMetricsCount} من ${coreRelevant.length} مؤشرات فقط) — ثقة غير كافية لإصدار تقييم مالي.`;
+    }
+
+    // Earnings Quality narrative (combining margins + FCF vs Net Income)
+    let earningsQualityStatusAr = 'لا تتوفر بيانات ربحية منشورة كافية لتقييم جودة الأرباح.';
+    if (roe !== null && netProfitMargin !== null) {
+      const fcfClause =
+        fcfToNetIncomeRatio !== null
+          ? fcfToNetIncomeRatio >= 0.7
+            ? ` مدعومة بتدفق نقدي حر قوي (${fcfToNetIncomeRatio}x صافي الربح).`
+            : fcfToNetIncomeRatio < 0
+            ? ' مع تدفق نقدي حر سالب يستدعي الحذر.'
+            : ` مع تحول نقدي حر (${fcfToNetIncomeRatio}x صافي الربح).`
+          : '';
+      if (roe >= 18 && netProfitMargin >= 12) {
+        earningsQualityStatusAr = `جودة أرباح مرتفعة موثقة: عائد ملكية ${roe}% وهامش صافي ${netProfitMargin}%${fcfClause}`;
+      } else if (netProfitMargin > 0) {
+        earningsQualityStatusAr = `ربحية إيجابية: هامش صافي ${netProfitMargin}% وعائد ملكية ${roe}%${fcfClause}`;
+      } else {
+        earningsQualityStatusAr = `خسائر أو تراجع في أحدث فترة منشورة (هامش صافي ${netProfitMargin}%).`;
+      }
+    } else if (peRatio !== null) {
+      earningsQualityStatusAr = `مكرر الربحية المنشور ${peRatio}x (باقي بنود قائمة الدخل والتدفقات غير منشورة عبر التغذية الآلية).`;
+    }
+
+    // Financial Risk narrative (Sector-Aware)
+    let financialRiskStatusAr = 'بيانات الرافعة المالية غير متاحة لهذا السهم حالياً.';
+    if (sectorProfile === 'BANK_FINANCIAL') {
+      financialRiskStatusAr =
+        roa !== null
+          ? `مصرف / مؤسسة مالية: لا يُقاس بالـ Current Ratio أو D/E الصناعي؛ العائد على الأصول ROA = ${roa}%${pbRatio !== null ? ` ومضاعف الدفترية P/B = ${pbRatio}x` : ''}.`
+          : 'مصرف / مؤسسة مالية: يتطلب تقييم كفاية رأس المال والـ ROA من القوائم الدورية.';
+    } else if (debtToEquity !== null) {
+      const crNote = currentRatio !== null ? ` | النسبة الجارية = ${currentRatio}x` : '';
+      if (debtToEquity <= 0.6) {
+        financialRiskStatusAr = `ملاءة مالية متينة ورافعة منخفضة (D/E = ${debtToEquity}${crNote}).`;
+      } else if (debtToEquity <= (sectorProfile === 'REAL_ESTATE' ? 1.8 : 1.3)) {
+        financialRiskStatusAr = `مديونية مقبولة ضمن معيار القطاع (D/E = ${debtToEquity}${crNote}).`;
+      } else {
+        financialRiskStatusAr = `مديونية مرتفعة تتطلب حذراً مع تكلفة التمويل (D/E = ${debtToEquity}${crNote}).`;
       }
     }
+
+    // Dividend Sustainability narrative
+    let dividendSustainabilityAr = 'لا توجد توزيعات نقدية مسجلة أو البيانات غير متاحة.';
+    if (dividendYield !== null && dividendYield > 0) {
+      if (dividendPayoutRatio !== null) {
+        dividendSustainabilityAr =
+          dividendPayoutRatio <= 75
+            ? `توزيعات نقدية مستدامة نسبياً (${dividendYield}% بنسبة توزيع ${dividendPayoutRatio}% من الأرباح).`
+            : `عائد توزيعات ${dividendYield}% مع نسبة توزيع مرتفعة (${dividendPayoutRatio}% من الأرباح) تتطلب متابعة التدفقات النقدية.`;
+      } else {
+        dividendSustainabilityAr = `عائد توزيعات حالي ${dividendYield}% (نسبة التوزيع إلى الأرباح غير منشورة للتحقق من الاستدامة).`;
+      }
+    }
+
+    return {
+      ticker: norm,
+      available,
+      insufficientReasonAr: available
+        ? undefined
+        : `نقص البيانات المالية المنشورة (${availableMetricsCount} من أصل ${coreRelevant.length} مؤشرات فقط).`,
+      sectorProfile,
+      sectorProfileAr,
+      fundamentalConfidence,
+      availableMetricsCount,
+      dataCompletenessPct,
+      reportingPeriod: stock.tvFiscalPeriodEndDate
+        ? `نسب قوائم منشورة حتى نهاية الفترة ${stock.tvFiscalPeriodEndDate} (TTM / FQ)`
+        : stock.isLiveQuote
+        ? `نسب مالية TTM / FQ مزامنة بتاريخ ${priceDate || 'غير محدد'}`
+        : `بيانات مرجعية قديمة (${priceDate || 'غير محدد'})`,
+      fiscalPeriodEndDate: stock.tvFiscalPeriodEndDate ?? null,
+      earningsReleaseDate: stock.tvEarningsReleaseDate ?? null,
+      nextEarningsDate: stock.tvNextEarningsDate ?? null,
+      dataSourceLabel: 'TradingView EGX Published Fundamentals (TTM / FQ)',
+      publicationDate: stock.tvEarningsReleaseDate ?? stock.tvFiscalPeriodEndDate ?? priceDate,
+      publishedMetrics,
+      derivedMetrics: {
+        impliedEpsFromPe,
+        impliedBvpsFromPb,
+        marketCapFromListedShares,
+        fcfToNetIncomeRatio,
+        noteAr:
+          'يتم فصل القيم المشتقة حسابياً (مثل ربحية ضمنية من السعر ÷ P/E أو القيمة السوقية من عدد الأسهم) عن القيم المنشورة مستقلاً في القوائم المالية.'
+      },
+      unavailableMetrics,
+      metricProvenance,
+      historicalYears: [],
+      historicalStatementsNoteAr:
+        'لا تصنع المنصة أرقام إيرادات أو قوائم لسنوات ماضية؛ ما لم تنشره الشركة أو تغذية TradingView TTM/FQ يظهر صراحةً في خانة "بيانات غير متوفرة".',
+      qualityScoreFormulaAr,
+      qualityScoreComponents,
+      ratios: {
+        grossProfitMargin,
+        operatingMargin,
+        netProfitMargin,
+        roe,
+        roa,
+        peRatio,
+        pbRatio,
+        dividendYield,
+        dividendPayoutRatio,
+        debtToEquity,
+        currentRatio,
+        freeCashFlow,
+        operatingCashFlow,
+        totalRevenue,
+        netIncomeTtm,
+        revenueGrowthPct,
+        epsGrowthPct,
+        eps: publishedEps, // NEVER silently replaced with Price / P/E
+        bookValuePerShare: publishedBvps, // NEVER silently replaced with Price / P/B
+        marketCapEgp,
+        high52W: stock.tvHigh52W ?? null,
+        low52W: stock.tvLow52W ?? null,
+        fundamentalQualityScore,
+        earningsQualityStatusAr,
+        financialRiskStatusAr,
+        dividendSustainabilityAr
+      }
+    };
   }
 }
