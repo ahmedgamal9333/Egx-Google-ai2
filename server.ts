@@ -54,6 +54,40 @@ function safeServerError(res: Response, status: number, fallbackMessage: string)
   res.status(normalizeProxySafeErrorStatus(status)).json({ error: fallbackMessage });
 }
 
+let marketSyncInFlight: Promise<void> | null = null;
+let lastMarketSyncAttemptAt = 0;
+
+/**
+ * Serverless instances do not execute startServer() or its background timers.
+ * Ensure each warm instance performs an initial provider sync on demand.
+ */
+async function ensureMarketSync(): Promise<void> {
+  if (marketSyncInFlight) {
+    await marketSyncInFlight;
+    return;
+  }
+
+  const live = LiveMarketSyncService.getLiveState();
+  const cooldownMs = live.tradingViewOnline ? 5 * 60 * 1000 : 60 * 1000;
+  if (Date.now() - lastMarketSyncAttemptAt < cooldownMs) return;
+
+  lastMarketSyncAttemptAt = Date.now();
+  marketSyncInFlight = (async () => {
+    const result = await LiveMarketSyncService.syncFromProviders();
+    if (!result.success) {
+      console.warn('On-demand EGX market sync did not complete:', result.error || 'No verified quotes received');
+    }
+  })();
+
+  try {
+    await marketSyncInFlight;
+  } catch (err: any) {
+    console.warn('On-demand EGX market sync failed:', err?.message || String(err));
+  } finally {
+    marketSyncInFlight = null;
+  }
+}
+
 export function createApiApp() {
   const app = express();
   app.use(express.json({ limit: '256kb' }));
@@ -72,8 +106,9 @@ export function createApiApp() {
   });
 
   // Market overview & macro data
-  app.get('/api/market/overview', (_req: Request, res: Response) => {
+  app.get('/api/market/overview', async (_req: Request, res: Response) => {
     try {
+      await ensureMarketSync();
       const overview = MarketDataService.getMarketOverview();
       res.json(overview);
     } catch {
@@ -97,8 +132,9 @@ export function createApiApp() {
   });
 
   // Stock universe list with verified metrics & real math badges
-  app.get('/api/stocks', (_req: Request, res: Response) => {
+  app.get('/api/stocks', async (_req: Request, res: Response) => {
     try {
+      await ensureMarketSync();
       const { stocksList } = getCachedStockBatches();
       res.json(stocksList);
     } catch {
@@ -482,6 +518,7 @@ export function createApiApp() {
   // Data sources and health (with real cached official EGX/CBE/CAPMAS probe)
   app.get('/api/sources/status', async (_req: Request, res: Response) => {
     try {
+      await ensureMarketSync();
       await MarketDataService.probeOfficialMacroAndEgxFeeds().catch(() => null);
       const report = SourceIntelligenceService.getReport();
       res.json(report);
