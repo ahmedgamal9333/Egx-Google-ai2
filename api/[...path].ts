@@ -1,11 +1,8 @@
 /**
  * Vercel catch-all function for the existing Express API.
- *
- * The Vite frontend is served from the deployment's static output while
- * every /api/* request is routed through this Express application.
- * Keep business logic in server.ts and server/services; do not duplicate it here.
+ * Keep API/business logic in server.ts and server/services.
  */
-import { createApiApp } from '../server';
+import { createApiApp } from '../server.ts';
 
 const app = createApiApp();
 
