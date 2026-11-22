@@ -2,7 +2,6 @@ import express, { NextFunction, Request, Response } from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createServer as createViteServer } from 'vite';
 
 import { EGX_STOCKS_UNIVERSE, getEGXStock } from './server/data/egxStocks';
 import { MarketDataService } from './server/services/marketDataService';
@@ -640,6 +639,7 @@ async function startServer() {
   const PORT = 3000;
 
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
