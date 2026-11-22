@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "bun run build && bun build server.ts --target=node --packages=external --external vite --outfile=server.bundle.js",
+  "buildCommand": "npm run build && npx esbuild server.ts --bundle --platform=node --packages=external --outfile=server.bundle.js",
   "functions": {
     "api/[...path].ts": {
       "maxDuration": 60
